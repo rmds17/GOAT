@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Example App</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <h1>Example App</h1>
+    
+    <div class="status">
+        <p><strong>Status:</strong> <span id="authStatus">Checking...</span></p>
+        <p id="userName" class="hidden"><strong>User:</strong> <span id="userNameValue"></span></p>
+    </div>
+
+    <div id="authButtons">
+        <a href="/api/auth/login" class="button hidden" id="loginBtn">Login</a>
+        <a href="/api/auth/logout" class="button logout hidden" id="logoutBtn">Logout</a>
+    </div>
+
+    <h2>API Endpoints</h2>
+    <ul>
+        <li>GET /api/auth/login</li>
+        <li>GET /api/auth/logout</li>
+        <li>GET /api/auth/profile</li>
+        <li>GET /api/auth/token</li>
+    </ul>
+
+    <script>
+        async function checkAuthStatus() {
+            try {
+                const response = await fetch('/api/auth/profile');
+                
+                const statusEl = document.getElementById('authStatus');
+                const userNameEl = document.getElementById('userName');
+                const userNameValueEl = document.getElementById('userNameValue');
+                const loginBtn = document.getElementById('loginBtn');
+                const logoutBtn = document.getElementById('logoutBtn');
+
+                if (response.ok) {
+                    const data = await response.json();
+                    statusEl.textContent = 'Authenticated';
+                    userNameValueEl.textContent = data.name;
+                    userNameEl.classList.remove('hidden');
+                    loginBtn.classList.add('hidden');
+                    logoutBtn.classList.remove('hidden');
+                } else {
+                    statusEl.textContent = 'Not authenticated';
+                    userNameEl.classList.add('hidden');
+                    loginBtn.classList.remove('hidden');
+                    logoutBtn.classList.add('hidden');
+                }
+            } catch (error) {
+                document.getElementById('authStatus').textContent = 'Error';
+                document.getElementById('loginBtn').classList.remove('hidden');
+            }
+        }
+
+        checkAuthStatus();
+    </script>
+</body>
+</html>
