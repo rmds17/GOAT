@@ -17,5 +17,9 @@
   "bugs": {
     "url": "https://github.com/rmds17/GOAT/issues"
   },
-  "homepage": "https://github.com/rmds17/GOAT#readme"
+  "homepage": "https://github.com/rmds17/GOAT#readme",
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0"
+  }
 }
