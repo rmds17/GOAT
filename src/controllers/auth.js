@@ -1,5 +1,5 @@
 const { AuthenticationClient, ResponseType } = require('@aps_sdk/authentication');
-const { APS_CLIENT_ID, APS_CALLBACK_URL, INTERNAL_TOKEN_SCOPES } = require('../../config.js');
+const { APS_CLIENT_ID, APS_CALLBACK_URL, INTERNAL_TOKEN_SCOPES } = require('../../public/js/config.js');
 
 const authenticationClient = new AuthenticationClient();
 
