@@ -196,4 +196,4 @@ app.delete('/api/workorders/:id', async (req, res) => {
 // --------- Página ---------
 app.get('/', (_req, res) => res.sendFile(path.resolve('public/html/index.html')));
 
-app.listen(PORT, () => console.log(`GOAT + Airtable em http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`GOAT em http://localhost:${PORT}`));
