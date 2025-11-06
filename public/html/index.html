@@ -1,67 +1,3 @@
-<!-- <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Example App</title>
-    <link rel="stylesheet" href="/css/style.css">
-</head>
-<body>
-    <h1>Example App</h1>
-    
-    <div class="status">
-        <p><strong>Status:</strong> <span id="authStatus">Checking...</span></p>
-        <p id="userName" class="hidden"><strong>User:</strong> <span id="userNameValue"></span></p>
-    </div>
-
-    <div id="authButtons">
-        <a href="/api/auth/login" class="button hidden" id="loginBtn">Login</a>
-        <a href="/api/auth/logout" class="button logout hidden" id="logoutBtn">Logout</a>
-    </div>
-
-    <h2>API Endpoints</h2>
-    <ul>
-        <li>GET /api/auth/login</li>
-        <li>GET /api/auth/logout</li>
-        <li>GET /api/auth/profile</li>
-        <li>GET /api/auth/token</li>
-    </ul>
-
-    <script>
-        async function checkAuthStatus() {
-            try {
-                const response = await fetch('/api/auth/profile');
-                
-                const statusEl = document.getElementById('authStatus');
-                const userNameEl = document.getElementById('userName');
-                const userNameValueEl = document.getElementById('userNameValue');
-                const loginBtn = document.getElementById('loginBtn');
-                const logoutBtn = document.getElementById('logoutBtn');
-
-                if (response.ok) {
-                    const data = await response.json();
-                    statusEl.textContent = 'Authenticated';
-                    userNameValueEl.textContent = data.name;
-                    userNameEl.classList.remove('hidden');
-                    loginBtn.classList.add('hidden');
-                    logoutBtn.classList.remove('hidden');
-                } else {
-                    statusEl.textContent = 'Not authenticated';
-                    userNameEl.classList.add('hidden');
-                    loginBtn.classList.remove('hidden');
-                    logoutBtn.classList.add('hidden');
-                }
-            } catch (error) {
-                document.getElementById('authStatus').textContent = 'Error';
-                document.getElementById('loginBtn').classList.remove('hidden');
-            }
-        }
-
-        checkAuthStatus();
-    </script>
-</body>
-</html> -->
-
 <!doctype html>
 <html lang="pt">
 <head>
@@ -74,20 +10,35 @@
   <script defer src="https://unpkg.com/web-ifc-viewer@1.0.181/dist/ifcviewerapi.js"></script>
   <script defer src="../js/goat.js"></script>
 </head>
+
+
 <body>
   <div class="layout">
     <!-- Viewer -->
-    <section class="left">
-      <div class="toolbar">
-        <label class="btn">
-          Abrir IFC
-          <input id="ifc-file" type="file" accept=".ifc" style="display:none" />
-        </label>
-        <span id="file-name" class="file-name">Nenhum ficheiro carregado</span>
-        <span class="tip">Duplo clique num elemento para o selecionar</span>
-      </div>
-      <div id="viewer-container" class="viewer-canvas"></div>
-    </section>
+    <!doctype html>
+      <html lang="pt">
+
+      <head>
+        <script src="viewer.js">
+        </script>
+
+        <meta charset="utf-8" />
+        <title>APS Viewer — GOAT</title>
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*//style.min.css" type="text/css">
+        <style>
+          html, body { height: 100%; margin: 0; }
+          #viewerContainer { width: 100%; height: 100vh; }
+        </style>
+      </head>
+      <body>
+        <div id="viewerContainer"></div>
+
+        <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*//viewer3D.min.js"></script>
+        <script src="../js/aps-viewer.js"></script>
+      </body>
+      </html>
+
 
     <!-- Painel OT -->
     <section class="right">
@@ -125,7 +76,7 @@
         <button type="submit">Criar OT</button>
       </form>
 
-      <h2>OT’s</h2>
+      <h2>Status</h2>
       <ul id="wo-list" class="wo-list"></ul>
       <p id="wo-empty" style="display:none">Ainda não há OT’s.</p>
     </section>

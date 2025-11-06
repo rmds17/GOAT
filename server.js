@@ -47,6 +47,30 @@ const PORT = process.env.PORT || 3001;
 app.use(express.static('public'));
 app.use(express.json());
 
+
+/* -------- APS: rota de token 2-legged -------- */
+app.get('/api/aps/token', async (_req, res) => {
+  try {
+    const params = new URLSearchParams();
+    params.append('grant_type', 'client_credentials');
+    params.append('client_id', process.env.APS_CLIENT_ID);
+    params.append('client_secret', process.env.APS_CLIENT_SECRET);
+    params.append('scope', 'data:read viewables:read');
+
+    const r = await fetch(
+      'https://developer.api.autodesk.com/authentication/v2/token',
+      { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params }
+    );
+    const j = await r.json();
+    if (!r.ok) throw new Error(JSON.stringify(j));
+    // o viewer só precisa disto:
+    res.json({ access_token: j.access_token, expires_in: j.expires_in });
+  } catch (err) {
+    console.error('APS token error:', err);
+    res.status(500).json({ error: 'APS_TOKEN_FAILED' });
+  }
+});
+
 // ---------- Airtable helpers ----------
 const TABLE = process.env.AIRTABLE_TABLE_WORKORDERS;
 const AT_BASE = `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(TABLE)}`;

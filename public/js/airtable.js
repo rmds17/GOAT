@@ -30,41 +30,6 @@ async function removeWorkOrder(id) {
   await api(`/api/workorders/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
-// ===== Viewer IFC =====
-let viewer;
-let picked = { globalId: '', type: '' };
-
-function initViewer() {
-  const container = document.getElementById('viewer-container');
-  viewer = new window.IfcViewerAPI.IfcViewerAPI({
-    container,
-    backgroundColor: new Uint8Array([240, 242, 245])
-  });
-  viewer.axes.setAxes();
-  viewer.grid.setGrid();
-
-  // duplo clique para apanhar elemento
-  container.addEventListener('dblclick', async () => {
-    const res = await viewer.pickIfcItem(true);
-    if (!res) return;
-    const { modelID, id } = res; // expressID
-    try {
-      const props = await viewer.IFC.getProperties(modelID, id, true);
-      picked.globalId = (props.GlobalId && props.GlobalId.value) || '';
-      picked.type = props.type || (props.Name && props.Name.value) || 'IFC Element';
-      document.getElementById('picked-gid').textContent = picked.globalId || '—';
-      document.getElementById('picked-type').textContent = picked.type || '—';
-    } catch (e) { console.warn(e); }
-  });
-}
-
-async function loadIFC(file) {
-  if (!file) return;
-  document.getElementById('file-name').textContent = file.name;
-  await viewer.IFC.setWasmPath('https://unpkg.com/web-ifc@0.0.47/');
-  await viewer.loadIfc(await file.arrayBuffer(), true);
-  viewer.context.renderer.postProduction.active = true;
-}
 
 // ===== UI de OT =====
 async function renderList() {
