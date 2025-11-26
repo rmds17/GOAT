@@ -105,15 +105,8 @@ function initForm() {
   });
 }
 
-function initFileInput() {
-  const input = document.getElementById('ifc-file');
-  input.addEventListener('change', (e) => loadIFC(e.target.files?.[0]));
-}
-
 // arrancar
 window.addEventListener('DOMContentLoaded', () => {
-  initViewer();
   initForm();
-  initFileInput();
   renderList();
 });

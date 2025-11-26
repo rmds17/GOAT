@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GOAT - Debug</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f0f0f0; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }
+        h1 { color: #333; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 4px; }
+        .status.ok { background: #d4edda; color: #155724; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .status.pending { background: #fff3cd; color: #856404; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>GOAT - Debug Console</h1>
+        
+        <h2>1. Check Server Connection</h2>
+        <button onclick="testServerConnection()">Test Server</button>
+        <div id="serverStatus" class="status pending">Checking...</div>
+        
+        <h2>2. Check APS Token</h2>
+        <button onclick="testAPSToken()">Test APS Token</button>
+        <div id="tokenStatus" class="status pending">Waiting...</div>
+        <pre id="tokenOutput"></pre>
+        
+        <h2>3. Check Autodesk Library</h2>
+        <div id="libraryStatus" class="status pending">Checking...</div>
+        
+        <h2>4. Check Airtable</h2>
+        <button onclick="testAirtable()">Test Airtable</button>
+        <div id="airtableStatus" class="status pending">Waiting...</div>
+        <pre id="airtableOutput"></pre>
+        
+        <h2>5. Browser Console Logs</h2>
+        <pre id="consoleLogs"></pre>
+        
+        <h2>6. Go to Main App</h2>
+        <button onclick="window.location.href='/'">Open GOAT App</button>
+    </div>
+
+    <script>
+        // Capture console logs
+        const logs = [];
+        const originalLog = console.log;
+        const originalError = console.error;
+        console.log = function(...args) {
+            logs.push('[LOG] ' + args.join(' '));
+            originalLog.apply(console, args);
+        };
+        console.error = function(...args) {
+            logs.push('[ERROR] ' + args.join(' '));
+            originalError.apply(console, args);
+        };
+
+        async function testServerConnection() {
+            try {
+                const res = await fetch('/');
+                document.getElementById('serverStatus').className = 'status ok';
+                document.getElementById('serverStatus').textContent = '✓ Server is running (HTTP ' + res.status + ')';
+            } catch (err) {
+                document.getElementById('serverStatus').className = 'status error';
+                document.getElementById('serverStatus').textContent = '✗ Server error: ' + err.message;
+            }
+        }
+
+        async function testAPSToken() {
+            try {
+                const res = await fetch('/api/aps/token');
+                if (!res.ok) {
+                    const error = await res.json();
+                    throw new Error(error.error || 'HTTP ' + res.status);
+                }
+                const data = await res.json();
+                document.getElementById('tokenStatus').className = 'status ok';
+                document.getElementById('tokenStatus').textContent = '✓ APS Token obtained';
+                document.getElementById('tokenOutput').textContent = JSON.stringify(data, null, 2);
+            } catch (err) {
+                document.getElementById('tokenStatus').className = 'status error';
+                document.getElementById('tokenStatus').textContent = '✗ APS Token error: ' + err.message;
+                document.getElementById('tokenOutput').textContent = err.message;
+            }
+        }
+
+        async function testAirtable() {
+            try {
+                const res = await fetch('/api/workorders');
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                document.getElementById('airtableStatus').className = 'status ok';
+                document.getElementById('airtableStatus').textContent = '✓ Airtable connected (' + (data.items?.length || 0) + ' work orders)';
+                document.getElementById('airtableOutput').textContent = JSON.stringify(data, null, 2);
+            } catch (err) {
+                document.getElementById('airtableStatus').className = 'status error';
+                document.getElementById('airtableStatus').textContent = '✗ Airtable error: ' + err.message;
+                document.getElementById('airtableOutput').textContent = err.message;
+            }
+        }
+
+        function checkLibrary() {
+            const status = document.getElementById('libraryStatus');
+            if (window.Autodesk && window.Autodesk.Viewing) {
+                status.className = 'status ok';
+                status.textContent = '✓ Autodesk Viewing library loaded';
+            } else {
+                status.className = 'status error';
+                status.textContent = '✗ Autodesk Viewing library not loaded (check CDN)';
+            }
+        }
+
+        // Run tests on load
+        window.addEventListener('load', () => {
+            testServerConnection();
+            checkLibrary();
+            
+            // Update logs periodically
+            setInterval(() => {
+                document.getElementById('consoleLogs').textContent = logs.join('\n') || '(no logs yet)';
+            }, 500);
+        });
+    </script>
+</body>
+</html>

@@ -5,44 +5,36 @@
   <title>GOAT — Gestão Organizada de Ativos e Trabalho</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="../css/style.css" />
-  <!-- libs por CDN (para evitar builds) -->
-  <script defer src="https://unpkg.com/three@0.150.1/build/three.min.js"></script>
-  <script defer src="https://unpkg.com/web-ifc-viewer@1.0.181/dist/ifcviewerapi.js"></script>
-  <script defer src="../js/goat.js"></script>
+  <!-- APS Viewer CSS -->
+  <link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.min.css" type="text/css">
+  <style>
+    body { margin: 0; background: white; }
+    .layout { display: grid; grid-template-columns: 1.4fr 1fr; height: 100vh; gap: 0; }
+    #viewerContainer { background: #f0f0f0; position: relative; }
+    .right { background: white; overflow: auto; padding: 15px; border-left: 1px solid #ddd; }
+    .urn-loader { margin-bottom: 20px; padding: 12px; background: #f0f5ff; border-radius: 6px; border: 1px solid #d0e0ff; }
+    .urn-loader label { display: block; font-weight: bold; margin-bottom: 6px; }
+    .urn-loader input { width: 100%; padding: 8px; margin: 6px 0; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; }
+    .urn-loader button { width: 100%; padding: 8px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+    .urn-loader button:hover { background: #0052a3; }
+  </style>
 </head>
-
 
 <body>
   <div class="layout">
-    <!-- Viewer -->
-    <!doctype html>
-      <html lang="pt">
-
-      <head>
-        <script src="viewer.js">
-        </script>
-
-        <meta charset="utf-8" />
-        <title>APS Viewer — GOAT</title>
-        <meta name="viewport" content="width=device-width,initial-scale=1" />
-        <link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*//style.min.css" type="text/css">
-        <style>
-          html, body { height: 100%; margin: 0; }
-          #viewerContainer { width: 100%; height: 100vh; }
-        </style>
-      </head>
-      <body>
-        <div id="viewerContainer"></div>
-
-        <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*//viewer3D.min.js"></script>
-        <script src="../js/aps-viewer.js"></script>
-      </body>
-      </html>
-
-
+    <!-- 3D Viewer Container -->
+    <div id="viewerContainer"></div>
     <!-- Painel OT -->
     <section class="right">
       <h2>Nova OT</h2>
+      
+      <!-- URN Loader -->
+      <div class="urn-loader">
+        <label>Carregar Modelo 3D</label>
+        <input id="f-urn" type="text" placeholder="Cole o URN do modelo aqui..." />
+        <button type="button" onclick="handleLoadModel()">Carregar Modelo</button>
+      </div>
+      
       <form id="wo-form" class="form">
         <label>Título
           <input id="f-title" required placeholder="Ex.: Porta não fecha" />
@@ -77,10 +69,16 @@
       </form>
 
       <h2>Status</h2>
-      <h2>Status</h2>
       <ul id="wo-list" class="wo-list"></ul>
-      <p id="wo-empty" style="display:none">Ainda não há OT’s.</p>
+      <p id="wo-empty" style="display:none">Ainda não há OT's.</p>
     </section>
   </div>
+
+  <!-- APS Viewer Library -->
+  <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
+  
+  <!-- Application Scripts -->
+  <script src="../js/airtable.js"></script>
+  <script src="../js/aps-viewer.js"></script>
 </body>
 </html>

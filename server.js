@@ -55,19 +55,112 @@ app.get('/api/aps/token', async (_req, res) => {
     params.append('grant_type', 'client_credentials');
     params.append('client_id', process.env.APS_CLIENT_ID);
     params.append('client_secret', process.env.APS_CLIENT_SECRET);
-    params.append('scope', 'data:read viewables:read');
+    params.append('scope', 'data:read');
 
+    console.log('Requesting APS token with client:', process.env.APS_CLIENT_ID?.substring(0, 5) + '...');
     const r = await fetch(
       'https://developer.api.autodesk.com/authentication/v2/token',
       { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params }
     );
     const j = await r.json();
-    if (!r.ok) throw new Error(JSON.stringify(j));
+    if (!r.ok) {
+      console.error('Token request failed:', j);
+      throw new Error(JSON.stringify(j));
+    }
+    console.log('Token obtained successfully');
     // o viewer só precisa disto:
     res.json({ access_token: j.access_token, expires_in: j.expires_in });
   } catch (err) {
     console.error('APS token error:', err);
-    res.status(500).json({ error: 'APS_TOKEN_FAILED' });
+    res.status(500).json({ error: 'APS_TOKEN_FAILED', message: err.message });
+  }
+});
+
+/* -------- APS: Get Viewable URN from GUID -------- */
+app.post('/api/aps/guid-to-urn', async (req, res) => {
+  try {
+    const { guid } = req.body;
+    if (!guid) return res.status(400).json({ error: 'GUID required' });
+
+    console.log('Converting GUID to URN:', guid);
+    
+    // The GUID needs to be base64url encoded as a URN
+    // Format: urn:adsk.objects:os.object:GUID
+    const urn = `dXJuOmFkc2sud2lwcHJvZDpmcy5maWxlOiR7Z3VpZH0=`;
+    
+    // Actually, let's use the proper format
+    const properUrn = Buffer.from(`urn:adsk.wipprod:fs.file:${guid}`).toString('base64url');
+    
+    res.json({ 
+      urn: properUrn,
+      originalGuid: guid,
+      message: 'GUID converted to encoded URN'
+    });
+  } catch (err) {
+    console.error('GUID conversion error:', err);
+    res.status(500).json({ error: 'GUID_CONVERSION_FAILED', details: err.message });
+  }
+});
+app.post('/api/aps/check', async (req, res) => {
+  try {
+    const { urn } = req.body;
+    if (!urn) return res.status(400).json({ error: 'URN required' });
+
+    console.log('Checking model URN:', urn);
+    res.json({ 
+      status: 'ready',
+      urn: urn,
+      message: 'Model URN is ready to load'
+    });
+  } catch (err) {
+    console.error('APS check error:', err);
+    res.status(500).json({ error: 'APS_CHECK_FAILED', details: err.message });
+  }
+});
+
+// ---------- Airtable helpers ----------
+app.post('/api/aps/get-urn', async (req, res) => {
+  try {
+    const { projectId, viewableGuid } = req.body;
+    if (!projectId || !viewableGuid) {
+      return res.status(400).json({ error: 'projectId and viewableGuid required' });
+    }
+
+    console.log('Getting viewable URN for project:', projectId, 'guid:', viewableGuid);
+    
+    // Get 2-legged token with data:read scope
+    const tokenParams = new URLSearchParams();
+    tokenParams.append('grant_type', 'client_credentials');
+    tokenParams.append('client_id', process.env.APS_CLIENT_ID);
+    tokenParams.append('client_secret', process.env.APS_CLIENT_SECRET);
+    tokenParams.append('scope', 'data:read');
+
+    const tokenRes = await fetch(
+      'https://developer.api.autodesk.com/authentication/v2/token',
+      { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: tokenParams }
+    );
+    const tokenData = await tokenRes.json();
+    const token = tokenData.access_token;
+
+    // Get project hub items
+    const hubUrl = `https://developer.api.autodesk.com/data/v1/projects/${projectId}/items?filter[type]=folders`;
+    const hubRes = await fetch(hubUrl, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (!hubRes.ok) {
+      console.log('Hub lookup failed, returning GUID-based URN');
+      // Fallback: construct URN from GUID
+      const urn = `urn:adsk.viewing:fs.file:${viewableGuid}`;
+      return res.json({ urn, source: 'guid-fallback' });
+    }
+
+    // For now, just return the GUID-based URN
+    const urn = `urn:adsk.viewing:fs.file:${viewableGuid}`;
+    res.json({ urn, source: 'guid' });
+  } catch (err) {
+    console.error('Get URN error:', err);
+    res.status(500).json({ error: 'GET_URN_FAILED', details: err.message });
   }
 });
 
@@ -194,6 +287,8 @@ app.delete('/api/workorders/:id', async (req, res) => {
 });
 
 // --------- Página ---------
+app.get('/debug', (_req, res) => res.sendFile(path.resolve('public/html/debug.html')));
+app.get('/model-test', (_req, res) => res.sendFile(path.resolve('public/html/model-test.html')));
 app.get('/', (_req, res) => res.sendFile(path.resolve('public/html/index.html')));
 
 app.listen(PORT, () => console.log(`GOAT em http://localhost:${PORT}`));

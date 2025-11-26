@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GOAT - Model Load Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f0f0f0; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }
+        h1 { color: #333; }
+        .test-section { margin: 20px 0; padding: 15px; background: #f9f9f9; border-radius: 6px; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 4px; }
+        .status.ok { background: #d4edda; color: #155724; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .status.pending { background: #fff3cd; color: #856404; }
+        .status.info { background: #d1ecf1; color: #0c5460; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; max-height: 300px; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; }
+        button:hover { background: #0056b3; }
+        input { padding: 8px; width: 100%; margin: 5px 0; border: 1px solid #ddd; border-radius: 4px; }
+    </style>
+    <link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.min.css" type="text/css">
+</head>
+<body>
+    <div class="container">
+        <h1>GOAT - Model Load Test</h1>
+        
+        <div class="test-section">
+            <h2>1. Test APS Token</h2>
+            <button onclick="testToken()">Get APS Token</button>
+            <div id="tokenStatus" class="status pending">Waiting...</div>
+            <pre id="tokenOutput"></pre>
+        </div>
+
+        <div class="test-section">
+            <h2>2. Test Model Loading</h2>
+            <label>URN:
+                <input id="urnInput" type="text" placeholder="urn:adsk.wipprod:dm.lineage:..." value="urn:adsk.wipprod:dm.lineage:hEzVuHcAQx6hrZGVFDTZyg" />
+            </label>
+            <button onclick="testModelLoad()">Load Model</button>
+            <div id="modelStatus" class="status pending">Waiting...</div>
+            <pre id="modelOutput"></pre>
+        </div>
+
+        <div class="test-section">
+            <h2>3. 3D Viewer (Mini Test)</h2>
+            <div id="viewerContainer" style="width: 100%; height: 400px; background: #f0f0f0; border: 1px solid #ddd; border-radius: 4px;"></div>
+            <div id="viewerStatus" class="status pending">Ready to load</div>
+        </div>
+
+        <div class="test-section">
+            <h2>4. Browser Logs</h2>
+            <pre id="consoleLogs" style="max-height: 200px; overflow-y: auto;"></pre>
+        </div>
+
+        <button onclick="window.location.href='/'">Back to GOAT App</button>
+    </div>
+
+    <!-- APS Viewer Library -->
+    <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
+
+    <script>
+        let viewer;
+        const logs = [];
+        const originalLog = console.log;
+        const originalError = console.error;
+
+        console.log = function(...args) {
+            logs.push('[LOG] ' + args.join(' '));
+            originalLog.apply(console, args);
+            updateLogs();
+        };
+        console.error = function(...args) {
+            logs.push('[ERROR] ' + args.join(' '));
+            originalError.apply(console, args);
+            updateLogs();
+        };
+
+        function updateLogs() {
+            document.getElementById('consoleLogs').textContent = logs.slice(-20).join('\n');
+        }
+
+        async function testToken() {
+            const status = document.getElementById('tokenStatus');
+            const output = document.getElementById('tokenOutput');
+            status.className = 'status pending';
+            status.textContent = 'Testing...';
+            output.textContent = '';
+
+            try {
+                const res = await fetch('/api/aps/token');
+                const data = await res.json();
+                
+                if (!res.ok) {
+                    throw new Error(data.error || 'Failed to get token');
+                }
+                
+                status.className = 'status ok';
+                status.textContent = '✓ Token received successfully';
+                output.textContent = JSON.stringify(data, null, 2);
+                console.log('Token test passed:', data);
+                return data.access_token;
+            } catch (err) {
+                status.className = 'status error';
+                status.textContent = '✗ Error: ' + err.message;
+                output.textContent = err.message;
+                console.error('Token test failed:', err);
+                return null;
+            }
+        }
+
+        async function testModelLoad() {
+            const urnInput = document.getElementById('urnInput').value.trim();
+            const status = document.getElementById('modelStatus');
+            const output = document.getElementById('modelOutput');
+            
+            if (!urnInput) {
+                alert('Please enter a URN or GUID');
+                return;
+            }
+
+            // Try to encode the URN if it's not already encoded
+            let urn = urnInput;
+            
+            // If it looks like a raw URN (starts with urn:), encode it
+            if (urn.startsWith('urn:')) {
+                try {
+                    // Encode using base64url
+                    const encoded = btoa(urn).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+                    output.textContent += `Original URN: ${urn}\nEncoded URN: ${encoded}\n\n`;
+                    urn = encoded;
+                } catch (e) {
+                    console.error('Encoding error:', e);
+                }
+            }
+
+            status.className = 'status pending';
+            status.textContent = 'Loading model...';
+            output.textContent += 'Step 1: Verifying URN...\n';
+
+            try {
+                // Check URN validity
+                console.log('Checking URN:', urn);
+                output.textContent += 'Step 1: Verifying URN...\n';
+                
+                const checkRes = await fetch('/api/aps/check', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ urn })
+                });
+
+                if (!checkRes.ok) {
+                    const error = await checkRes.json();
+                    throw new Error(error.details || error.error || 'URN check failed');
+                }
+
+                const checkData = await checkRes.json();
+                console.log('URN verified:', checkData);
+                output.textContent += 'URN verified: ' + checkData.message + '\n';
+
+                // Get token
+                console.log('Getting token...');
+                output.textContent += 'Step 2: Getting APS token...\n';
+                
+                const tokenRes = await fetch('/api/aps/token');
+                if (!tokenRes.ok) throw new Error('Failed to get token');
+                const tokenData = await tokenRes.json();
+                const token = tokenData.access_token;
+                
+                console.log('Token received, initializing viewer...');
+                output.textContent += 'Token received\nStep 3: Initializing viewer...\n';
+
+                // Initialize viewer
+                const options = { env: 'AutodeskProduction', accessToken: token };
+                
+                Autodesk.Viewing.Initializer(options, () => {
+                    console.log('Initializer callback called');
+                    output.textContent += 'Initializer ready\nStep 4: Creating viewer...\n';
+                    
+                    const container = document.getElementById('viewerContainer');
+                    viewer = new Autodesk.Viewing.GuiViewer3D(container);
+                    viewer.start();
+                    
+                    console.log('Viewer started, loading document...');
+                    output.textContent += 'Viewer started\nStep 5: Loading model...\n';
+
+                    // Load the model
+                    const fullUrn = urn.startsWith('urn:') ? urn : `urn:${urn}`;
+                    console.log('Loading URN:', fullUrn);
+                    
+                    Autodesk.Viewing.Document.load(
+                        fullUrn,
+                        (doc) => {
+                            console.log('Document loaded successfully');
+                            output.textContent += 'Document loaded\nGetting geometry...\n';
+                            const viewable = doc.getRoot().getDefaultGeometry();
+                            
+                            if (!viewable) {
+                                throw new Error('No viewable geometry found');
+                            }
+                            
+                            console.log('Loading node...');
+                            output.textContent += 'Loading node...\n';
+                            viewer.loadDocumentNode(doc, viewable);
+                            
+                            status.className = 'status ok';
+                            status.textContent = '✓ Model loaded successfully!';
+                            output.textContent += 'SUCCESS: Model loaded!\n';
+                            console.log('Model loaded successfully');
+                        },
+                        (error) => {
+                            console.error('Error loading document:', error);
+                            console.log('Full error object:', error);
+                            status.className = 'status error';
+                            status.textContent = '✗ Error loading model';
+                            let errorMsg = 'Error: ';
+                            if (error && error.message) {
+                                errorMsg += error.message;
+                            } else if (typeof error === 'string') {
+                                errorMsg += error;
+                            } else {
+                                errorMsg += JSON.stringify(error);
+                            }
+                            output.textContent += errorMsg + '\n';
+                            output.textContent += '\nTroubleshooting:\n';
+                            output.textContent += '1. The URN might not be in viewable format\n';
+                            output.textContent += '2. The model might not be translated yet\n';
+                            output.textContent += '3. Your credentials might not have permission\n';
+                        },
+                        null,
+                        null,
+                        { accessToken: token }
+                    );
+                });
+            } catch (err) {
+                console.error('Test failed:', err);
+                status.className = 'status error';
+                status.textContent = '✗ Error: ' + err.message;
+                output.textContent += 'ERROR: ' + err.message;
+            }
+        }
+
+        // Auto-run token test on load
+        window.addEventListener('load', () => {
+            console.log('Page loaded, checking Autodesk library...');
+            if (window.Autodesk && window.Autodesk.Viewing) {
+                console.log('Autodesk library loaded');
+                document.getElementById('viewerStatus').className = 'status ok';
+                document.getElementById('viewerStatus').textContent = '✓ Autodesk library ready';
+            } else {
+                console.warn('Autodesk library not ready');
+            }
+        });
+    </script>
+</body>
+</html>
