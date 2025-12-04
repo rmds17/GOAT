@@ -25,6 +25,122 @@ async function getToken() {
   }
 }
 
+// Atualiza o card de propriedades com base no resultado do getProperties
+function updatePropertiesPanel(result, gidEl, typeEl, propsContainer) {
+  if (!result) return;
+
+  const props = result.properties || [];
+
+  // tentar apanhar GlobalId / IfcGUID / externalId
+  const gidProp =
+    props.find(p => p.displayName === 'GlobalId' || p.displayName === 'IfcGUID') || null;
+  const globalId = gidProp
+    ? gidProp.displayValue
+    : (result.externalId || '');
+
+  // tentar apanhar o "tipo" mais parecido com Revit
+  const typeProp =
+    props.find(p =>
+      p.displayName === 'Type Name' ||
+      p.displayName === 'Tipo' ||
+      p.displayName === 'Type'
+    ) || null;
+  const typeName = typeProp
+    ? typeProp.displayValue
+    : (result.name || '');
+
+  gidEl.textContent = globalId || '—';
+  typeEl.textContent = typeName || '—';
+
+  // guardar também no objeto usado pelas OTs
+  picked.globalId = globalId || '';
+  picked.type = typeName || '';
+
+  // agrupar por categoria (estilo painel de propriedades do Revit)
+  const groups = {};
+  for (const p of props) {
+    const cat = p.displayCategory || 'Outros';
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(p);
+  }
+
+  const catNames = Object.keys(groups).sort((a, b) => a.localeCompare(b, 'pt'));
+
+  let html = '';
+  for (const cat of catNames) {
+    const list = groups[cat].filter(p => p.displayValue !== '' && p.displayValue != null);
+    if (!list.length) continue;
+
+    html += `<div class="prop-group">`;
+    html += `<div class="prop-group-title">${cat}</div>`;
+
+    for (const p of list) {
+      html += `
+        <div class="prop-row">
+          <span class="prop-name">${p.displayName}</span>
+          <span class="prop-value">${p.displayValue}</span>
+        </div>
+      `;
+    }
+
+    html += `</div>`;
+  }
+
+  if (!html) {
+    html = '<em>Sem propriedades visíveis.</em>';
+  }
+
+  propsContainer.innerHTML = html;
+
+  console.log('[APS] Selected element:', {
+    globalId: picked.globalId,
+    type: picked.type,
+    propsCount: props.length
+  });
+}
+
+// Handler de seleção de elementos no viewer
+function onSelectionChanged(event) {
+  const gidEl = document.getElementById('picked-gid');
+  const typeEl = document.getElementById('picked-type');
+  const propsContainer = document.getElementById('properties-list');
+
+  if (!gidEl || !typeEl || !propsContainer || !viewer) return;
+
+  let dbId = null;
+
+  // evento simples (SELECTION_CHANGED_EVENT)
+  if (event && Array.isArray(event.dbIdArray) && event.dbIdArray.length > 0) {
+    dbId = event.dbIdArray[0];
+  }
+  // caso venha noutro formato (para compatibilidade futura)
+  else if (event && Array.isArray(event.nodeArray) && event.nodeArray.length > 0) {
+    dbId = event.nodeArray[0];
+  }
+
+  // nada selecionado → limpar painel
+  if (!dbId) {
+    picked.globalId = '';
+    picked.type = '';
+    gidEl.textContent = '—';
+    typeEl.textContent = '—';
+    propsContainer.innerHTML = '<em>Nenhum elemento selecionado.</em>';
+    return;
+  }
+
+  // buscar propriedades do elemento
+  viewer.getProperties(
+    dbId,
+    function (result) {
+      updatePropertiesPanel(result, gidEl, typeEl, propsContainer);
+    },
+    function (err) {
+      console.error('[APS] Erro em getProperties:', err);
+      propsContainer.innerHTML = '<em>Não foi possível ler as propriedades.</em>';
+    }
+  );
+}
+
 // Initialize the Autodesk Viewer
 async function initViewer() {
   try {
@@ -62,28 +178,11 @@ async function initViewer() {
         viewer.start();
         console.log('[APS] Viewer started successfully');
 
-        // Setup selection handler to capture building elements
-        viewer.addEventListener(Autodesk.Viewing.SELECTION_CHANGED_EVENT, (event) => {
-          if (event.dbIdArray && event.dbIdArray.length > 0) {
-            const dbId = event.dbIdArray[0];
-            
-            // Get element properties
-            viewer.getProperties(dbId, (props) => {
-              const globalId = props.find(p => p.displayName === 'GlobalId');
-              const type = props.find(p => p.displayName === 'IfcType' || p.displayName === 'Type');
-              
-              picked.globalId = globalId ? globalId.value : '';
-              picked.type = type ? type.value : '';
-              
-              const gidEl = document.getElementById('picked-gid');
-              const typeEl = document.getElementById('picked-type');
-              if (gidEl) gidEl.textContent = picked.globalId || '—';
-              if (typeEl) typeEl.textContent = picked.type || '—';
-              
-              console.log('[APS] Selected element:', { globalId: picked.globalId, type: picked.type });
-            });
-          }
-        });
+        // Setup selection handler to capturar elementos do modelo
+        viewer.addEventListener(
+          Autodesk.Viewing.SELECTION_CHANGED_EVENT,
+          onSelectionChanged
+        );
       } catch (err) {
         console.error('[APS] Error during viewer initialization:', err);
       }
