@@ -133,7 +133,7 @@ app.post('/api/aps/get-urn', async (req, res) => {
     tokenParams.append('grant_type', 'client_credentials');
     tokenParams.append('client_id', process.env.APS_CLIENT_ID);
     tokenParams.append('client_secret', process.env.APS_CLIENT_SECRET);
-    tokenParams.append('scope', 'data:read');
+    tokenParams.append('scope', 'data:read viewables:read');
 
     const tokenRes = await fetch(
       'https://developer.api.autodesk.com/authentication/v2/token',
