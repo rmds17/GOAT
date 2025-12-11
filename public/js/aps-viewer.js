@@ -34,16 +34,18 @@ function togglePropGroup(groupEl) {
   groupEl.classList.toggle('collapsed');
 }
 
-// mostra ou esconde o header "Item selecionado" + linha GlobalId/Tipo
+// mostra/esconde o cabeçalho "Item selecionado" e a linha GlobalId / Tipo
 function setSelectionUI(selected) {
-  const propsPanel = document.getElementById('properties-list');
-  if (!propsPanel) return;
+  const propsContainer = document.getElementById('properties-list');
+  if (!propsContainer) return;
 
-  const panel = propsPanel.closest('.panel');
+  const panel = propsContainer.closest('.panel');
   if (!panel) return;
 
   const header = panel.querySelector('.panel-header');
   const summary = panel.querySelector('.selected-summary');
+  const gidEl = document.getElementById('picked-gid');
+  const typeEl = document.getElementById('picked-type');
 
   if (selected) {
     if (header) header.style.display = 'none';
@@ -51,6 +53,25 @@ function setSelectionUI(selected) {
   } else {
     if (header) header.style.display = '';
     if (summary) summary.style.display = '';
+    if (gidEl) gidEl.textContent = '—';
+    if (typeEl) typeEl.textContent = '—';
+  }
+}
+
+// ativa / desativa o painel de OTs consoante haja item selecionado
+function setOTEnabled(enabled) {
+  const locked = document.getElementById('ot-locked');
+  const content = document.getElementById('ot-content');
+  if (!locked || !content) return;
+
+  if (enabled) {
+    locked.style.display = 'none';
+    content.style.display = '';
+    content.style.opacity = '1';
+  } else {
+    locked.style.display = '';
+    content.style.display = 'none';
+    content.style.opacity = '0.4';
   }
 }
 
@@ -85,28 +106,32 @@ function updatePropertiesPanel(result, propsContainer) {
   // --- General Info: Global ID, Tipo, ElementId, Category, CategoryId ---
   const generalProps = [];
 
-  function addGeneralLabel(label, value) {
+  function addGeneral(label, value) {
     if (value != null && value !== '') {
       generalProps.push({ label, value });
     }
   }
 
   // Global ID + Tipo primeiro
-  addGeneralLabel('Global ID', globalId);
-  addGeneralLabel('Tipo', typeName);
+  addGeneral('Global ID', globalId);
+  addGeneral('Tipo', typeName);
 
   // Depois Element ID, Category, Category ID vindos das propriedades
   function findProp(name) {
-    return props.find(p => p.displayName === name && p.displayValue != null && p.displayValue !== '');
+    return props.find(
+      p => p.displayName === name &&
+           p.displayValue != null &&
+           p.displayValue !== ''
+    );
   }
 
   const elId = findProp('ElementId');
   const cat = findProp('Category');
   const catId = findProp('CategoryId');
 
-  if (elId) addGeneralLabel('Element ID', elId.displayValue);
-  if (cat) addGeneralLabel('Category', cat.displayValue);
-  if (catId) addGeneralLabel('Category ID', catId.displayValue);
+  if (elId) addGeneral('Element ID', elId.displayValue);
+  if (cat) addGeneral('Category', cat.displayValue);
+  if (catId) addGeneral('Category ID', catId.displayValue);
 
   // --- Agrupar restantes por categoria, excluindo grupos que não queremos ---
   const groups = {};
@@ -117,9 +142,19 @@ function updatePropertiesPanel(result, propsContainer) {
 
     const name = p.displayName;
 
-    // já usados em General Info → não repetir
-    if (name === 'ElementId' || name === 'Category' || name === 'CategoryId') continue;
-    if (name === 'GlobalId' || name === 'IfcGUID' || name === 'Type Name' || name === 'Tipo' || name === 'Type') continue;
+    // já usados na General Info → não repetir
+    if (
+      name === 'ElementId' ||
+      name === 'Category' ||
+      name === 'CategoryId' ||
+      name === 'GlobalId' ||
+      name === 'IfcGUID' ||
+      name === 'Type Name' ||
+      name === 'Tipo' ||
+      name === 'Type'
+    ) {
+      continue;
+    }
 
     const catName = p.displayCategory || 'Outros';
 
@@ -213,17 +248,20 @@ function onSelectionChanged(event) {
     dbId = event.nodeArray[0];
   }
 
-  // nada selecionado → voltar ao estado "default"
+  // nada selecionado → estado default
   if (!dbId) {
     picked.globalId = '';
     picked.type = '';
-    setSelectionUI(false);
-    propsContainer.innerHTML = '<em>Seleciona um elemento no modelo para ver as propriedades.</em>';
+    setSelectionUI(false);   // mostra “Item selecionado” normal
+    setOTEnabled(false);     // bloqueia painel de OTs
+    propsContainer.innerHTML =
+      '<em>Seleciona um elemento no modelo para ver as propriedades.</em>';
     return;
   }
 
-  // há seleção → esconder header + resumo, mostrar abas
+  // há seleção → esconder header “Item selecionado” e desbloquear OTs
   setSelectionUI(true);
+  setOTEnabled(true);
 
   viewer.getProperties(
     dbId,
@@ -274,7 +312,6 @@ async function initViewer() {
         viewer.start();
         console.log('[APS] Viewer started successfully');
 
-        // evento de seleção
         viewer.addEventListener(
           Autodesk.Viewing.SELECTION_CHANGED_EVENT,
           onSelectionChanged

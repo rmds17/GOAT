@@ -114,6 +114,17 @@
       gap: 2px;
     }
 
+    .ot-locked {
+      font-size: 13px;
+      color: #6b7280;
+      font-style: italic;
+      padding: 4px 2px;
+    }
+
+    .ot-content {
+      transition: opacity 0.15s ease;
+    }
+
         .prop-group-title {
       font-size: 13px;
       font-weight: 700;
@@ -338,7 +349,7 @@
         <div class="panel">
           <div class="panel-header">
             <h2>Item selecionado</h2>
-            <p class="panel-subtitle">Propriedades BIM básicas do elemento selecionado no modelo.</p>
+            <p class="panel-subtitle">Propriedades BIM do elemento selecionado.</p>
           </div>
           <div class="panel-body">
       <div class="selected-summary">
@@ -373,7 +384,7 @@
           </label>
           <label class="chip">
             <input type="checkbox" checked>
-            Mostrar “bubbles” de OT
+            Mostrar bubbles das OTs
           </label>
           <label class="chip">
             <input type="checkbox">
@@ -389,6 +400,13 @@
           <p class="panel-subtitle">Criar e gerir OTs ligadas aos elementos do modelo.</p>
         </div>
         <div class="panel-body">
+        <!-- Estado bloqueado (sem item selecionado) -->
+        <div id="ot-locked" class="ot-locked">
+          Para criar uma OT, seleciona primeiro um elemento no modelo.
+        </div>
+
+        <!-- Conteúdo completo da OT (form + lista) -->
+        <div id="ot-content" class="ot-content" style="display:none">
           <form id="wo-form" class="form">
             <label>
               Título
