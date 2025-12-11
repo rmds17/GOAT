@@ -19,6 +19,7 @@
   },
   "homepage": "https://github.com/rmds17/GOAT#readme",
   "dependencies": {
+    "airtable": "^0.12.2",
     "dotenv": "^17.2.3",
     "express": "^5.1.0"
   },
