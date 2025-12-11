@@ -424,7 +424,7 @@
             </label>
 
             <label>
-              Data limite
+              Data Limite
               <input id="f-due" type="date" />
             </label>
 
@@ -470,6 +470,70 @@
       </div>
     </div>
   </div>
+
+<script>
+const form = document.getElementById('wo-form');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const title = document.getElementById('f-title').value.trim();
+  const asset = document.getElementById('f-asset').value.trim();
+  const priority = document.getElementById('f-priority').value;
+  const due = document.getElementById('f-due').value;
+  const description = document.getElementById('f-desc').value.trim();
+
+  if (!title || !asset) {
+    alert("Preenche Título e Ativo / Zona.");
+    return;
+  }
+
+  const allowedPriorities = ["Low", "Medium", "High", "Urgent"];
+  if (!allowedPriorities.includes(priority)) {
+    alert("Seleciona uma prioridade válida.");
+    return;
+  }
+
+  const payload = {
+    "Título": title,
+    "Prioridade": priority,
+    "Data Limite": due,
+    "Ativo / Zona": asset,
+    "Descrição": description
+  };
+
+  try {
+    const response = await fetch('/api/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json();
+
+    if (data.error) {
+      alert("Erro ao criar OT: " + (data.error.message || JSON.stringify(data.error)));
+      console.error("Erro Airtable:", data.error);
+      return;
+    }
+
+    alert("OT criada com sucesso!");
+    form.reset();
+
+    const woList = document.getElementById('wo-list');
+    const li = document.createElement('li');
+    li.textContent = `${data.fields.Título} - ${data.fields.Prioridade} - ${data.fields["Ativo / Zona"]}`;
+    woList.appendChild(li);
+
+    const emptyState = document.getElementById('wo-empty');
+    if (emptyState.style.display !== "none") emptyState.style.display = "none";
+
+  } catch (err) {
+    console.error('Erro ao criar OT:', err);
+    alert('Erro ao criar OT. Veja o console.');
+  }
+});
+</script>
 
     <script>
     function openUrnModal() {
