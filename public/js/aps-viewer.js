@@ -5,7 +5,8 @@ let picked = { globalId: '', type: '' };
 
 console.log('[APS] Script loaded');
 
-// Fetch token from backend
+// ---------------- TOKEN ----------------
+
 async function getToken() {
   try {
     console.log('[APS] Requesting token...');
@@ -25,20 +26,49 @@ async function getToken() {
   }
 }
 
-// Atualiza o card de propriedades com base no resultado do getProperties
-function updatePropertiesPanel(result, gidEl, typeEl, propsContainer) {
+// ---------------- UI HELPERS ----------------
+
+// abre/fecha um grupo de propriedades (toggle)
+function togglePropGroup(groupEl) {
+  if (!groupEl) return;
+  groupEl.classList.toggle('collapsed');
+}
+
+// mostra ou esconde o header "Item selecionado" + linha GlobalId/Tipo
+function setSelectionUI(selected) {
+  const propsPanel = document.getElementById('properties-list');
+  if (!propsPanel) return;
+
+  const panel = propsPanel.closest('.panel');
+  if (!panel) return;
+
+  const header = panel.querySelector('.panel-header');
+  const summary = panel.querySelector('.selected-summary');
+
+  if (selected) {
+    if (header) header.style.display = 'none';
+    if (summary) summary.style.display = 'none';
+  } else {
+    if (header) header.style.display = '';
+    if (summary) summary.style.display = '';
+  }
+}
+
+// ---------------- PROPRIEDADES ----------------
+
+function updatePropertiesPanel(result, propsContainer) {
   if (!result) return;
 
   const props = result.properties || [];
 
-  // tentar apanhar GlobalId / IfcGUID / externalId
+  // GlobalId / IfcGUID / externalId
   const gidProp =
     props.find(p => p.displayName === 'GlobalId' || p.displayName === 'IfcGUID') || null;
   const globalId = gidProp
     ? gidProp.displayValue
     : (result.externalId || '');
 
-  // tentar apanhar o "tipo" mais parecido com Revit
+  // Tipo (Type Name / Type / Tipo)
   const typeProp =
     props.find(p =>
       p.displayName === 'Type Name' ||
@@ -49,30 +79,100 @@ function updatePropertiesPanel(result, gidEl, typeEl, propsContainer) {
     ? typeProp.displayValue
     : (result.name || '');
 
-  gidEl.textContent = globalId || '—';
-  typeEl.textContent = typeName || '—';
-
-  // guardar também no objeto usado pelas OTs
   picked.globalId = globalId || '';
   picked.type = typeName || '';
 
-  // agrupar por categoria (estilo painel de propriedades do Revit)
+  // --- General Info: Global ID, Tipo, ElementId, Category, CategoryId ---
+  const generalProps = [];
+
+  function addGeneralLabel(label, value) {
+    if (value != null && value !== '') {
+      generalProps.push({ label, value });
+    }
+  }
+
+  // Global ID + Tipo primeiro
+  addGeneralLabel('Global ID', globalId);
+  addGeneralLabel('Tipo', typeName);
+
+  // Depois Element ID, Category, Category ID vindos das propriedades
+  function findProp(name) {
+    return props.find(p => p.displayName === name && p.displayValue != null && p.displayValue !== '');
+  }
+
+  const elId = findProp('ElementId');
+  const cat = findProp('Category');
+  const catId = findProp('CategoryId');
+
+  if (elId) addGeneralLabel('Element ID', elId.displayValue);
+  if (cat) addGeneralLabel('Category', cat.displayValue);
+  if (catId) addGeneralLabel('Category ID', catId.displayValue);
+
+  // --- Agrupar restantes por categoria, excluindo grupos que não queremos ---
   const groups = {};
+
   for (const p of props) {
-    const cat = p.displayCategory || 'Outros';
-    if (!groups[cat]) groups[cat] = [];
-    groups[cat].push(p);
+    const value = p.displayValue;
+    if (value === '' || value == null) continue;
+
+    const name = p.displayName;
+
+    // já usados em General Info → não repetir
+    if (name === 'ElementId' || name === 'Category' || name === 'CategoryId') continue;
+    if (name === 'GlobalId' || name === 'IfcGUID' || name === 'Type Name' || name === 'Tipo' || name === 'Type') continue;
+
+    const catName = p.displayCategory || 'Outros';
+
+    // grupos a esconder
+    if (
+      catName === '__VIEWABLE_IN__' ||
+      catName === '__INTERNALREF__' ||
+      catName === '__PARENT__' ||
+      catName === 'Graphics'
+    ) {
+      continue;
+    }
+
+    if (!groups[catName]) groups[catName] = [];
+    groups[catName].push(p);
   }
 
   const catNames = Object.keys(groups).sort((a, b) => a.localeCompare(b, 'pt'));
 
+  // --- Construir HTML ---
   let html = '';
-  for (const cat of catNames) {
-    const list = groups[cat].filter(p => p.displayValue !== '' && p.displayValue != null);
-    if (!list.length) continue;
 
-    html += `<div class="prop-group">`;
-    html += `<div class="prop-group-title">${cat}</div>`;
+  // General Info (sempre aberta, sem toggle)
+  if (generalProps.length) {
+    html += `<div class="prop-group general-info">`;
+    html += `<div class="prop-group-title">GENERAL INFO</div>`;
+    html += `<div class="prop-group-body">`;
+
+    for (const gp of generalProps) {
+      html += `
+        <div class="prop-row">
+          <span class="prop-name">${gp.label}</span>
+          <span class="prop-value">${gp.value}</span>
+        </div>
+      `;
+    }
+
+    html += `</div></div>`;
+  }
+
+  // Restantes grupos: começam todos colapsados
+  for (const catName of catNames) {
+    const list = groups[catName];
+    if (!list || !list.length) continue;
+
+    html += `<div class="prop-group collapsible collapsed">`;
+    html += `
+      <div class="prop-group-header" onclick="togglePropGroup(this.parentElement)">
+        <span class="prop-group-title">${catName}</span>
+        <span class="prop-group-arrow">▾</span>
+      </div>
+      <div class="prop-group-body">
+    `;
 
     for (const p of list) {
       html += `
@@ -83,7 +183,7 @@ function updatePropertiesPanel(result, gidEl, typeEl, propsContainer) {
       `;
     }
 
-    html += `</div>`;
+    html += `</div></div>`;
   }
 
   if (!html) {
@@ -99,40 +199,36 @@ function updatePropertiesPanel(result, gidEl, typeEl, propsContainer) {
   });
 }
 
-// Handler de seleção de elementos no viewer
-function onSelectionChanged(event) {
-  const gidEl = document.getElementById('picked-gid');
-  const typeEl = document.getElementById('picked-type');
-  const propsContainer = document.getElementById('properties-list');
+// ---------------- EVENTO DE SELEÇÃO ----------------
 
-  if (!gidEl || !typeEl || !propsContainer || !viewer) return;
+function onSelectionChanged(event) {
+  const propsContainer = document.getElementById('properties-list');
+  if (!propsContainer || !viewer) return;
 
   let dbId = null;
 
-  // evento simples (SELECTION_CHANGED_EVENT)
   if (event && Array.isArray(event.dbIdArray) && event.dbIdArray.length > 0) {
     dbId = event.dbIdArray[0];
-  }
-  // caso venha noutro formato (para compatibilidade futura)
-  else if (event && Array.isArray(event.nodeArray) && event.nodeArray.length > 0) {
+  } else if (event && Array.isArray(event.nodeArray) && event.nodeArray.length > 0) {
     dbId = event.nodeArray[0];
   }
 
-  // nada selecionado → limpar painel
+  // nada selecionado → voltar ao estado "default"
   if (!dbId) {
     picked.globalId = '';
     picked.type = '';
-    gidEl.textContent = '—';
-    typeEl.textContent = '—';
-    propsContainer.innerHTML = '<em>Nenhum elemento selecionado.</em>';
+    setSelectionUI(false);
+    propsContainer.innerHTML = '<em>Seleciona um elemento no modelo para ver as propriedades.</em>';
     return;
   }
 
-  // buscar propriedades do elemento
+  // há seleção → esconder header + resumo, mostrar abas
+  setSelectionUI(true);
+
   viewer.getProperties(
     dbId,
     function (result) {
-      updatePropertiesPanel(result, gidEl, typeEl, propsContainer);
+      updatePropertiesPanel(result, propsContainer);
     },
     function (err) {
       console.error('[APS] Erro em getProperties:', err);
@@ -141,12 +237,12 @@ function onSelectionChanged(event) {
   );
 }
 
-// Initialize the Autodesk Viewer
+// ---------------- INICIALIZAÇÃO DO VIEWER ----------------
+
 async function initViewer() {
   try {
     console.log('[APS] Starting viewer initialization...');
     
-    // Check if Autodesk library is loaded
     if (!window.Autodesk || !window.Autodesk.Viewing) {
       console.warn('[APS] Autodesk Viewing library not available yet');
       return;
@@ -178,7 +274,7 @@ async function initViewer() {
         viewer.start();
         console.log('[APS] Viewer started successfully');
 
-        // Setup selection handler to capturar elementos do modelo
+        // evento de seleção
         viewer.addEventListener(
           Autodesk.Viewing.SELECTION_CHANGED_EVENT,
           onSelectionChanged
@@ -192,7 +288,8 @@ async function initViewer() {
   }
 }
 
-// Load a model from Autodesk (requires URN)
+// ---------------- LOAD DE MODELO ----------------
+
 async function loadModel(urn) {
   if (!viewer) {
     console.error('[APS] Viewer not initialized');
@@ -208,7 +305,6 @@ async function loadModel(urn) {
   try {
     console.log('[APS] Loading model with URN:', urn);
 
-    // Helper: base64url-encode a string
     function base64urlEncode(str) {
       try {
         const b64 = btoa(str);
@@ -219,25 +315,21 @@ async function loadModel(urn) {
       }
     }
 
-    // Determine final URN in the form 'urn:<base64url>' which Viewer expects
     let finalUrn = urn;
     if (urn.startsWith('urn:')) {
       const after = urn.slice(4);
-      // If the part after 'urn:' contains characters outside base64url, treat as raw and encode
       if (!/^[A-Za-z0-9_-]+$/.test(after)) {
         const encoded = base64urlEncode(urn);
         if (!encoded) throw new Error('Failed to encode URN');
         finalUrn = `urn:${encoded}`;
         console.log('[APS] Encoded raw URN to:', finalUrn);
       } else {
-        finalUrn = urn; // already encoded
+        finalUrn = urn;
       }
     } else {
-      // If user supplied only the base64url part, prefix with 'urn:'
       if (/^[A-Za-z0-9_-]+$/.test(urn)) {
         finalUrn = `urn:${urn}`;
       } else {
-        // Raw string without prefix — encode entire string
         const encoded = base64urlEncode(urn);
         if (!encoded) throw new Error('Failed to encode URN');
         finalUrn = `urn:${encoded}`;
@@ -264,7 +356,8 @@ async function loadModel(urn) {
   }
 }
 
-// Handle URN input from UI
+// ---------------- UI: BOTÃO CARREGAR MODELO ----------------
+
 function handleLoadModel() {
   const input = document.getElementById('f-urn');
   const urn = input.value.trim();
@@ -278,13 +371,14 @@ function handleLoadModel() {
   loadModel(urn);
 }
 
-// Initialize on page load - with retries
+// ---------------- BOOTSTRAP ----------------
+
 console.log('[APS] Waiting for page load...');
 let initAttempts = 0;
+
 document.addEventListener('DOMContentLoaded', () => {
   console.log('[APS] DOM loaded');
   
-  // Wait for Autodesk library to load from CDN
   const checkAutodesk = setInterval(() => {
     initAttempts++;
     console.log('[APS] Checking for Autodesk library (attempt ' + initAttempts + ')...');
@@ -296,7 +390,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }, 500);
 
-  // Timeout after 15 seconds
   setTimeout(() => {
     clearInterval(checkAutodesk);
     if (!window.Autodesk || !window.Autodesk.Viewing) {

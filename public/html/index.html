@@ -114,6 +114,45 @@
       gap: 2px;
     }
 
+        .prop-group-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #374151;
+      margin: 6px 0 4px;
+    }
+
+        .prop-group.general-info {
+      background: #f9fafb;
+      border-color: #e5e7eb;
+    }
+
+    .prop-group-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+    }
+
+    .prop-group-body {
+      margin-top: 4px;
+    }
+
+    .prop-group-arrow {
+      font-size: 11px;
+      color: #6b7280;
+      transition: transform 0.15s ease;
+    }
+
+    .prop-group.collapsed .prop-group-body {
+      display: none;
+    }
+
+    .prop-group.collapsed .prop-group-arrow {
+      transform: rotate(-90deg);
+    }
+
     .panel-header h2,
     .panel-header h3 {
       margin: 0;
