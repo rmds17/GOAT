@@ -48,6 +48,17 @@
       text-transform: uppercase;
     }
 
+    .logo-button {
+      background: transparent;
+      border: none;
+      padding: 0;
+      text-align: left;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      cursor: pointer;
+    }
+
     .app-header-right {
       display: flex;
       align-items: center;
@@ -327,11 +338,13 @@
   <!-- BARRA TOP -->
   <header class="app-header">
     <div class="app-header-left">
-      <span class="logo">GOAT</span>
-      <span class="logo-sub">Gestão Organizada de Ativos e Trabalho</span>
+      <button class="logo-button" type="button" onclick="window.location.href='/'">
+        <span class="logo">GOAT</span>
+        <span class="logo-sub">Gestão Organizada de Ativos e Trabalho</span>
+      </button>
     </div>
           <div class="app-header-right">
-        <a href="/api/auth/login" class="btn btn-ghost">Login Autodesk</a>
+        <a href="/auth" class="btn btn-ghost" id="account-link">Conta</a>
         <button type="button" class="btn" onclick="openUrnModal()">
           Carregar modelo
         </button>
@@ -472,6 +485,33 @@
   </div>
 
 <script>
+const ACCOUNT_STORAGE_KEY = 'goatAccount';
+const accountLink = document.getElementById('account-link');
+
+(function initAccountLink() {
+  if (!accountLink) return;
+  try {
+    const storedAccount = sessionStorage.getItem(ACCOUNT_STORAGE_KEY);
+    if (storedAccount) {
+      accountLink.setAttribute('href', '/account');
+    }
+  } catch (err) {
+    console.warn('Não foi possível verificar sessão do utilizador:', err);
+  }
+
+  accountLink.addEventListener('click', (event) => {
+    try {
+      const stored = sessionStorage.getItem(ACCOUNT_STORAGE_KEY);
+      if (stored) {
+        event.preventDefault();
+        window.location.href = '/account';
+      }
+    } catch (err) {
+      console.warn('Não foi possível redirecionar para a conta:', err);
+    }
+  });
+})();
+
 const form = document.getElementById('wo-form');
 
 form.addEventListener('submit', async (e) => {

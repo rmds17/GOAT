@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GOAT — Acesso</title>
+  <link rel="stylesheet" href="../css/style.css" />
+  <style>
+    :root {
+      color-scheme: light;
+    }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      background: linear-gradient(135deg, #eef2ff, #f8fafc);
+      min-height: 100vh;
+      color: #0f172a;
+    }
+    header {
+      padding: 20px 28px;
+      border-bottom: 1px solid #e2e8f0;
+      background: rgba(255,255,255,0.85);
+      backdrop-filter: blur(6px);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .logo {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+    }
+    .auth-wrapper {
+      max-width: 960px;
+      margin: 50px auto;
+      padding: 0 24px 60px;
+    }
+    .hero {
+      margin-bottom: 24px;
+    }
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+    }
+    .hero p {
+      margin: 0;
+      color: #475569;
+    }
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      border: 1px solid #e2e8f0;
+      padding: 24px;
+      box-shadow: 0 20px 50px rgba(15,23,42,0.06);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .card h2 {
+      margin: 0;
+      font-size: 20px;
+    }
+    .card p {
+      margin: 0;
+      color: #64748b;
+      font-size: 14px;
+    }
+    form {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #475569;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    input {
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid #cbd5f5;
+      font-size: 14px;
+    }
+    button {
+      margin-top: 4px;
+      padding: 12px;
+      border: none;
+      border-radius: 10px;
+      background: #0f62fe;
+      color: #fff;
+      font-weight: 600;
+      font-size: 15px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #0043ce;
+    }
+    .message {
+      margin-top: 24px;
+      padding: 14px 18px;
+      border-radius: 10px;
+      font-size: 14px;
+      display: none;
+    }
+    .message.success {
+      background: #ecfdf5;
+      color: #065f46;
+      border: 1px solid #6ee7b7;
+    }
+    .message.error {
+      background: #fef2f2;
+      color: #b91c1c;
+      border: 1px solid #fecaca;
+    }
+    .back-link {
+      color: #0f62fe;
+      font-weight: 600;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <div class="logo">GOAT</div>
+      <small>Autenticação simples</small>
+    </div>
+    <a class="back-link" href="/">&#8592; Voltar ao painel</a>
+  </header>
+
+  <main class="auth-wrapper">
+    <section class="hero">
+      <h1>Como queres continuar?</h1>
+      <p>Cria uma nova conta ou entra se já tens credenciais.</p>
+    </section>
+
+    <div class="card-grid">
+      <article class="card">
+        <div>
+          <h2>Criar conta</h2>
+          <p>Nome completo, email corporativo e palavra-passe com pelo menos 8 caracteres.</p>
+        </div>
+        <form id="register-form">
+          <label>
+            Nome completo
+            <input type="text" id="register-name" required placeholder="Ex.: Ana Costa" />
+          </label>
+          <label>
+            Email
+            <input type="email" id="register-email" required placeholder="nome@empresa.com" />
+          </label>
+          <label>
+            Palavra-passe
+            <input type="password" id="register-password" required minlength="8" placeholder="Min. 8 caracteres" />
+          </label>
+          <button type="submit">Criar conta</button>
+        </form>
+      </article>
+
+      <article class="card">
+        <div>
+          <h2>Já tenho conta</h2>
+          <p>Entra com o mesmo email e palavra-passe usados na criação.</p>
+        </div>
+        <form id="login-form">
+          <label>
+            Email
+            <input type="email" id="login-email" required placeholder="nome@empresa.com" />
+          </label>
+          <label>
+            Palavra-passe
+            <input type="password" id="login-password" required placeholder="********" />
+          </label>
+          <button type="submit">Entrar</button>
+        </form>
+      </article>
+    </div>
+
+    <div id="auth-message" class="message"></div>
+
+  </main>
+
+  <script>
+    const messageBox = document.getElementById('auth-message');
+    const storageKey = 'goatAccount';
+
+    function showMessage(type, text) {
+      messageBox.textContent = text;
+      messageBox.className = `message ${type}`;
+      messageBox.style.display = 'block';
+    }
+
+    async function postJSON(url, payload) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok || data.ok === false) {
+        const err = data?.error || 'UNKNOWN_ERROR';
+        throw new Error(typeof err === 'string' ? err : JSON.stringify(err));
+      }
+      return data;
+    }
+
+    document.getElementById('register-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const name = document.getElementById('register-name').value.trim();
+      const email = document.getElementById('register-email').value.trim();
+      const password = document.getElementById('register-password').value;
+
+      if (password.length < 8) {
+        showMessage('error', 'A palavra-passe tem de ter pelo menos 8 caracteres.');
+        return;
+      }
+
+      try {
+        const data = await postJSON('/api/accounts/register', { name, email, password });
+        showMessage('success', `Conta criada para ${data.user.name}. Podes iniciar sessão.`);
+        event.target.reset();
+      } catch (error) {
+        const msg = error.message === 'EMAIL_IN_USE'
+          ? 'Este email já está registado.'
+          : 'Não foi possível criar a conta.';
+        showMessage('error', msg);
+        console.error('Register error:', error);
+      }
+    });
+
+    document.getElementById('login-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const email = document.getElementById('login-email').value.trim();
+      const password = document.getElementById('login-password').value;
+
+      try {
+        const data = await postJSON('/api/accounts/login', { email, password });
+        showMessage('success', `Bem-vindo(a), ${data.user.name}!`);
+        event.target.reset();
+        try {
+          sessionStorage.setItem(storageKey, JSON.stringify(data.user));
+        } catch (err) {
+          console.warn('Não foi possível guardar sessão no browser:', err);
+        }
+        window.location.href = '/account';
+      } catch (error) {
+        const msg = error.message === 'INVALID_CREDENTIALS'
+          ? 'Email ou palavra-passe inválidos.'
+          : 'Não foi possível iniciar sessão.';
+        showMessage('error', msg);
+        console.error('Login error:', error);
+        try {
+          sessionStorage.removeItem(storageKey);
+        } catch (err) {
+          console.warn('Não foi possível limpar a sessão do browser:', err);
+        }
+      }
+    });
+  </script>
+</body>
+</html>
