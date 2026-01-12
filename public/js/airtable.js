@@ -1,3 +1,56 @@
+const ACCOUNT_STORAGE_KEY = 'goatAccount';
+const DONE_STATUS_KEYWORDS = ['done', 'concluida', 'concluída', 'completed'];
+let currentAccount = null;
+let accountLoaded = false;
+
+function refreshCurrentAccount() {
+  try {
+    const stored = sessionStorage.getItem(ACCOUNT_STORAGE_KEY);
+    currentAccount = stored ? JSON.parse(stored) : null;
+  } catch (err) {
+    console.warn('Não foi possível ler a sessão atual:', err);
+    currentAccount = null;
+  }
+  accountLoaded = true;
+  updateAdminLinkVisibility();
+}
+
+function getCurrentAccount() {
+  if (!accountLoaded) {
+    refreshCurrentAccount();
+  }
+  return currentAccount;
+}
+
+function isCurrentUserAdmin() {
+  return Boolean(getCurrentAccount()?.isAdmin);
+}
+
+function getAuthHeaders() {
+  const account = getCurrentAccount();
+  if (!account || !account.email || !account.passwordHash) {
+    return {};
+  }
+  return {
+    'X-Goat-Email': account.email,
+    'X-Goat-Secret': account.passwordHash
+  };
+}
+
+function isWorkOrderDone(wo) {
+  if (!wo) return false;
+  if (wo.completed) return true;
+  if (!wo.status) return false;
+  const normalized = wo.status.toString().trim().toLowerCase();
+  return DONE_STATUS_KEYWORDS.includes(normalized);
+}
+
+function updateAdminLinkVisibility() {
+  const adminLink = document.getElementById('admin-link');
+  if (!adminLink) return;
+  adminLink.style.display = isCurrentUserAdmin() ? '' : 'none';
+}
+
 // ======== Airtable via API do nosso servidor ========
 async function api(path, opts = {}) {
   const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
@@ -35,6 +88,7 @@ async function removeWorkOrder(id) {
 async function renderList() {
   const list = document.getElementById('wo-list');
   const empty = document.getElementById('wo-empty');
+  if (!list || !empty) return;
   list.innerHTML = '';
   let items = [];
   try { items = await listWorkOrders(); } catch (e) { console.error(e); }
@@ -49,16 +103,22 @@ async function renderList() {
   items.forEach(wo => {
     const li = document.createElement('li');
     li.className = 'wo';
+    if (isWorkOrderDone(wo)) {
+      li.classList.add('done');
+    }
+    const titleText = (wo.title && wo.title.trim()) ? wo.title : `OT ${wo.code}`;
     li.innerHTML = `
       <div class="wo-head">
         <span class="code">${wo.code}</span>
-        <span class="title">${wo.title || ''}</span>
+        <span class="title">${titleText}</span>
       </div>
       <div class="wo-meta">
         <span>Prioridade: ${wo.priority}</span>
         ${wo.dueDate ? `<span>Limite: ${wo.dueDate.slice(0,10)}</span>` : ''}
         ${wo.asset ? `<span>Ativo: ${wo.asset}</span>` : ''}
         ${wo.elementId ? `<span>Element ID: ${wo.elementId}</span>` : ''}
+        ${wo.status ? `<span>Status: ${wo.status}</span>` : ''}
+        ${typeof wo.completed === 'boolean' ? `<span>Terminada: ${wo.completed ? 'Sim' : 'Não'}</span>` : ''}
       </div>
       ${wo.description ? `<p class="desc">${wo.description}</p>` : ''}
       <div class="actions">
@@ -87,6 +147,7 @@ async function renderList() {
 
 function initForm() {
   const form = document.getElementById('wo-form');
+  if (!form) return;
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const title = document.getElementById('f-title').value.trim();
@@ -117,8 +178,23 @@ function initForm() {
   });
 }
 
+function hookSelectedElementToForm() {
+  const elementIdInput = document.getElementById('f-element-id');
+  if (!elementIdInput) return;
+
+  window.addEventListener('viewer:selection', (event) => {
+    const detail = event.detail || {};
+    if (!detail || detail.hasSelection === false) return;
+    const selectedElementId = detail.elementId;
+    if (!selectedElementId) return;
+    elementIdInput.value = selectedElementId;
+  });
+}
+
 // arrancar
 window.addEventListener('DOMContentLoaded', () => {
+  refreshCurrentAccount();
   initForm();
+  hookSelectedElementToForm();
   renderList();
 });

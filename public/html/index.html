@@ -344,6 +344,7 @@
       </button>
     </div>
           <div class="app-header-right">
+        <a href="/admin" class="btn btn-ghost" id="admin-link" style="display:none;">Admin</a>
         <a href="/auth" class="btn btn-ghost" id="account-link">Conta</a>
         <button type="button" class="btn" onclick="openUrnModal()">
           Carregar modelo
@@ -499,13 +500,13 @@
   </div>
 
 <script>
-const ACCOUNT_STORAGE_KEY = 'goatAccount';
+const ACCOUNT_LINK_STORAGE_KEY = 'goatAccount';
 const accountLink = document.getElementById('account-link');
 
 (function initAccountLink() {
   if (!accountLink) return;
   try {
-    const storedAccount = sessionStorage.getItem(ACCOUNT_STORAGE_KEY);
+    const storedAccount = sessionStorage.getItem(ACCOUNT_LINK_STORAGE_KEY);
     if (storedAccount) {
       accountLink.setAttribute('href', '/account');
     }
@@ -515,7 +516,7 @@ const accountLink = document.getElementById('account-link');
 
   accountLink.addEventListener('click', (event) => {
     try {
-      const stored = sessionStorage.getItem(ACCOUNT_STORAGE_KEY);
+      const stored = sessionStorage.getItem(ACCOUNT_LINK_STORAGE_KEY);
       if (stored) {
         event.preventDefault();
         window.location.href = '/account';

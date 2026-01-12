@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GOAT — Admin de OTs</title>
+  <link rel="stylesheet" href="../css/style.css" />
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      background: linear-gradient(135deg, #eef2ff, #f8fafc);
+      min-height: 100vh;
+      color: #0f172a;
+    }
+    header {
+      padding: 18px 28px;
+      border-bottom: 1px solid rgba(15,23,42,0.08);
+      background: rgba(255,255,255,0.9);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      backdrop-filter: blur(6px);
+    }
+    .logo {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+    }
+    .admin-wrapper {
+      max-width: 980px;
+      margin: 40px auto;
+      padding: 0 24px 60px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 30px;
+    }
+    .hero p {
+      margin: 0;
+      color: #475569;
+    }
+    .panel {
+      border-radius: 18px;
+      padding: 20px;
+    }
+    .admin-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .admin-actions button,
+    .admin-actions a {
+      border: none;
+      border-radius: 999px;
+      padding: 10px 16px;
+      background: #0f62fe;
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .admin-actions button.secondary {
+      background: #e2e8f0;
+      color: #0f172a;
+    }
+    #admin-warning {
+      display: none;
+      padding: 14px 18px;
+      border-radius: 12px;
+      border: 1px solid #fecaca;
+      background: #fef2f2;
+      color: #b91c1c;
+    }
+    #admin-list-wrapper {
+      display: none;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .wo-admin {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 14px;
+      background: #fff;
+      box-shadow: 0 12px 30px rgba(15,23,42,0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .wo-admin.done {
+      opacity: 0.75;
+    }
+    .wo-admin-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+    }
+    .wo-admin-title {
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .wo-admin-code {
+      font-weight: 700;
+      color: #0f62fe;
+      font-size: 14px;
+    }
+    .wo-admin-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 13px;
+      color: #475569;
+    }
+    .wo-admin-actions {
+      margin-top: 6px;
+      display: flex;
+      gap: 10px;
+    }
+    .wo-admin-actions button {
+      border: none;
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .wo-admin-actions .success {
+      background: #059669;
+      color: #fff;
+    }
+    .wo-admin-actions .ghost {
+      background: #f3f4f6;
+      color: #111827;
+      border: 1px solid #d1d5db;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <div class="logo">GOAT</div>
+      <small>Gestão de OTs — Admin</small>
+    </div>
+    <div class="admin-actions">
+      <a href="/" class="secondary">Voltar ao painel</a>
+      <button type="button" id="refresh-btn" class="secondary">Atualizar lista</button>
+    </div>
+  </header>
+
+  <main class="admin-wrapper">
+    <section class="hero">
+      <h1>Centro de conclusão</h1>
+      <p>Apenas contas com perfil de administrador conseguem concluir as ordens de trabalho.</p>
+    </section>
+
+    <section id="admin-gate" class="panel">
+      <h2>Confirmação de email</h2>
+      <p style="margin-top:4px;color:#475569;">Indica o email autorizado para este painel.</p>
+      <form id="admin-gate-form" style="display:flex;flex-direction:column;gap:10px;max-width:360px;">
+        <label style="font-size:13px;font-weight:600;color:#475569;display:flex;flex-direction:column;gap:4px;">
+          Email do administrador
+          <input type="email" id="admin-gate-email" required placeholder="nome@empresa.com" style="padding:10px;border-radius:8px;border:1px solid #cbd5f5;" />
+        </label>
+        <button type="submit" class="btn">Validar acesso</button>
+      </form>
+      <div id="admin-gate-message" class="message" style="display:none;margin-top:10px;"></div>
+    </section>
+
+    <div id="admin-warning"></div>
+
+    <section id="admin-list-wrapper">
+      <div id="admin-count"></div>
+      <div id="admin-list" class="wo-list"></div>
+    </section>
+  </main>
+
+  <script src="../js/admin.js"></script>
+</body>
+</html>

@@ -91,6 +91,14 @@ function setOTEnabled(enabled) {
   }
 }
 
+function broadcastViewerSelection(detail = {}) {
+  try {
+    window.dispatchEvent(new CustomEvent('viewer:selection', { detail }));
+  } catch (err) {
+    console.warn('[APS] Failed to broadcast viewer selection', err);
+  }
+}
+
 // ---------------- ELEMENT FOCUS HELPERS ----------------
 
 function getThreeRef() {
@@ -413,6 +421,7 @@ function onSelectionChanged(event) {
     setOTEnabled(false);     // bloqueia painel de OTs
     propsContainer.innerHTML =
       '<em>Seleciona um elemento no modelo para ver as propriedades.</em>';
+    broadcastViewerSelection({ hasSelection: false });
     return;
   }
 
@@ -428,10 +437,18 @@ function onSelectionChanged(event) {
       if (elementIdLabel) {
         elementIdLabel.textContent = elementIdValue ?? '—';
       }
+      broadcastViewerSelection({
+        hasSelection: true,
+        dbId,
+        elementId: elementIdValue ? String(elementIdValue).trim() : null,
+        globalId: picked.globalId || null,
+        type: picked.type || null
+      });
     },
     function (err) {
       console.error('[APS] Erro em getProperties:', err);
       propsContainer.innerHTML = '<em>Não foi possível ler as propriedades.</em>';
+      broadcastViewerSelection({ hasSelection: false });
     }
   );
 }

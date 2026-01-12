@@ -59,13 +59,22 @@ const ACCOUNT_FIELDS = {
   email: 'Email',
   passwordHash: 'Password'
 };
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
+  .split(',')
+  .map(email => email.trim().toLowerCase())
+  .filter(Boolean);
+console.log('[admin] allowed emails:', ADMIN_EMAILS);
+const STATUS_DEFAULT = process.env.WORKORDER_STATUS_DEFAULT || 'Por concluir';
+const STATUS_DONE = process.env.WORKORDER_STATUS_DONE || 'Concluída';
 const WORKORDER_FIELD_OPTIONS = {
   title: ['Título'],
   priority: ['Prioridade'],
   dueDate: ['Data Limite'],
   asset: ['Ativo / Zona'],
   description: ['Descrição'],
-  elementId: ['Element ID']
+  elementId: ['Element ID'],
+  status: ['Status', 'Estado', 'Situação']
+  ,completed: ['Terminada', 'Concluída']
 };
 
 const WORKORDER_FIELDS = {};
@@ -86,7 +95,9 @@ const OPTIONAL_WORKORDER_KEYS = new Set([
   'dueDate',
   'asset',
   'description',
-  'elementId'
+  'elementId',
+  'status',
+  'completed'
 ]);
 
 function isOptionalWorkOrderKey(key) {
@@ -100,6 +111,11 @@ app.use(express.static(PUBLIC_DIR, { fallthrough: true }));
 
 function normalizeEmail(email = '') {
   return email.trim().toLowerCase();
+}
+
+function isAdminEmail(email = '') {
+  if (!email) return false;
+  return ADMIN_EMAILS.includes(email.trim().toLowerCase());
 }
 
 function hashPassword(password = '') {
@@ -199,12 +215,28 @@ function mapAccount(record, options = {}) {
   const includePassword = Boolean(options.includePassword);
   if (!record) return null;
   const f = record.fields || {};
+  const emailValue = f[ACCOUNT_FIELDS.email] || '';
+  const normalizedEmail = normalizeEmail(emailValue);
   return {
     id: record.id,
     name: f[ACCOUNT_FIELDS.name] || '',
-    email: f[ACCOUNT_FIELDS.email] || '',
+    email: emailValue,
+    isAdmin: isAdminEmail(normalizedEmail),
     ...(includePassword ? { passwordHash: f[ACCOUNT_FIELDS.passwordHash] || '' } : {})
   };
+}
+
+async function authenticateRequest(req) {
+  const rawEmail = req.headers['x-goat-email'];
+  const secret = req.headers['x-goat-secret'];
+  if (!rawEmail || !secret) return null;
+  const accountRecord = await findAccountByEmail(rawEmail);
+  if (!accountRecord) return null;
+  const storedHash = accountRecord.fields?.[ACCOUNT_FIELDS.passwordHash];
+  if (!storedHash || storedHash !== secret) {
+    return null;
+  }
+  return mapAccount(accountRecord, { includePassword: true });
 }
 
 function getFieldOptions(key) {
@@ -259,7 +291,9 @@ function mapWorkOrder(record) {
     dueDate: readWorkOrderField(f, 'dueDate') || '',
     asset: readWorkOrderField(f, 'asset') || '',
     description: readWorkOrderField(f, 'description') || '',
-    elementId: readWorkOrderField(f, 'elementId') || ''
+    elementId: readWorkOrderField(f, 'elementId') || '',
+    status: readWorkOrderField(f, 'status') || STATUS_DEFAULT,
+    completed: Boolean(readWorkOrderField(f, 'completed'))
   };
 }
 
@@ -269,6 +303,24 @@ function buildWorkOrderFields(payload = {}) {
     if (value === undefined || value === null) return;
     const fieldName = resolveFieldName(key);
     if (!fieldName) return;
+    if (key === 'completed') {
+      if (typeof value === 'boolean') {
+        fields[fieldName] = value;
+        return;
+      }
+      if (typeof value === 'string') {
+        const lowered = value.trim().toLowerCase();
+        if (lowered === 'true' || lowered === '1' || lowered === 'yes' || lowered === 'on') {
+          fields[fieldName] = true;
+          return;
+        }
+        if (lowered === 'false' || lowered === '0' || lowered === 'no' || lowered === 'off') {
+          fields[fieldName] = false;
+          return;
+        }
+      }
+      return;
+    }
     if (typeof value === 'string') {
       const trimmed = value.trim();
       if (!trimmed) return;
@@ -296,6 +348,8 @@ function buildWorkOrderFields(payload = {}) {
   setField('asset', payload.asset);
   setField('description', payload.description);
   setField('elementId', payload.elementId);
+  setField('status', payload.status);
+  setField('completed', payload.completed);
 
   if (!Object.prototype.hasOwnProperty.call(fields, '__aliasTries')) {
     Object.defineProperty(fields, '__aliasTries', {
@@ -564,6 +618,12 @@ app.post('/api/workorders', async (req, res) => {
     if (!payload.title || !payload.title.trim()) {
       return res.status(400).json({ ok: false, error: 'TITLE_REQUIRED' });
     }
+    if (!payload.status) {
+      payload.status = STATUS_DEFAULT;
+    }
+    if (!Object.prototype.hasOwnProperty.call(payload, 'completed')) {
+      payload.completed = false;
+    }
     const fields = buildWorkOrderFields(payload);
     const created = await createRecord(WORKORDER_TABLE_PATH, fields);
     res.json({ ok: true, item: mapWorkOrder(created) });
@@ -578,6 +638,17 @@ app.patch('/api/workorders/:id', async (req, res) => {
     const { id } = req.params;
     if (!id) return res.status(400).json({ ok: false, error: 'WORKORDER_ID_REQUIRED' });
     const payload = req.body || {};
+    const wantsStatusChange = Object.prototype.hasOwnProperty.call(payload, 'status');
+    const wantsCompletedChange = Object.prototype.hasOwnProperty.call(payload, 'completed');
+    if (wantsStatusChange || wantsCompletedChange) {
+      const account = await authenticateRequest(req);
+      if (!account) {
+        return res.status(401).json({ ok: false, error: 'AUTH_REQUIRED' });
+      }
+      if (!account.isAdmin) {
+        return res.status(403).json({ ok: false, error: 'ADMIN_ONLY' });
+      }
+    }
     const fields = buildWorkOrderFields(payload);
     if (Object.keys(fields).length === 0) {
       return res.status(400).json({ ok: false, error: 'NO_FIELDS_TO_UPDATE' });
@@ -587,6 +658,47 @@ app.patch('/api/workorders/:id', async (req, res) => {
   } catch (err) {
     console.error('Update workorder failed:', err);
     res.status(err.status || 500).json({ ok: false, error: 'UPDATE_WORKORDER_FAILED', details: err.details });
+  }
+});
+
+app.post('/api/workorders/:id/done', async (req, res) => {
+  try {
+    const account = await authenticateRequest(req);
+    if (!account) {
+      return res.status(401).json({ ok: false, error: 'AUTH_REQUIRED' });
+    }
+    if (!account.isAdmin) {
+      return res.status(403).json({ ok: false, error: 'ADMIN_ONLY' });
+    }
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ ok: false, error: 'WORKORDER_ID_REQUIRED' });
+    const overrideStatus = req.body && typeof req.body.status === 'string' && req.body.status.trim()
+      ? req.body.status.trim()
+      : STATUS_DONE;
+    const fields = buildWorkOrderFields({ status: overrideStatus, completed: true });
+    if (Object.keys(fields).length === 0) {
+      return res.status(400).json({ ok: false, error: 'STATUS_FIELD_MISSING' });
+    }
+    const updated = await updateRecord(WORKORDER_TABLE_PATH, id, fields);
+    res.json({ ok: true, item: mapWorkOrder(updated) });
+  } catch (err) {
+    console.error('Mark workorder done failed:', err);
+    res.status(err.status || 500).json({ ok: false, error: 'COMPLETE_WORKORDER_FAILED', details: err.details });
+  }
+});
+
+app.post('/api/admin/access', (req, res) => {
+  try {
+    const { email = '' } = req.body || {};
+    const normalized = normalizeEmail(email);
+    const allowed = Boolean(normalized && ADMIN_EMAILS.includes(normalized));
+    if (!allowed) {
+      return res.status(403).json({ ok: false, error: 'ADMIN_EMAIL_REQUIRED' });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Admin access check failed:', err);
+    res.status(500).json({ ok: false, error: 'ADMIN_ACCESS_FAILED' });
   }
 });
 
@@ -638,6 +750,7 @@ app.delete("/api/delete/:id", async (req, res) => {
 // --------- Página ---------
 app.get('/auth', (_req, res) => res.sendFile(htmlPath('auth.html')));
 app.get('/account', (_req, res) => res.sendFile(htmlPath('account.html')));
+app.get('/admin', (_req, res) => res.sendFile(htmlPath('admin.html')));
 app.get('/model-test', (_req, res) => res.sendFile(htmlPath('model-test.html')));
 app.get('/debug', (_req, res) => res.sendFile(htmlPath('debug.html')));
 app.get('/', (_req, res) => res.sendFile(htmlPath('index.html')));
