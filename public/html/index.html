@@ -396,7 +396,7 @@
             Highlight itens com OT
           </label>
           <label class="chip">
-            <input type="checkbox" checked>
+            <input type="checkbox" id="toggle-ot-bubbles" checked>
             Mostrar bubbles das OTs
           </label>
           <label class="chip">
@@ -406,56 +406,70 @@
         </div>
       </div>
 
-      <!-- Ordens de Trabalho -->
+      <!-- Ordens de Trabalho (criação está ligada à seleção) -->
       <div class="panel">
         <div class="panel-header">
           <h2>Ordens de Trabalho</h2>
-          <p class="panel-subtitle">Criar e gerir OTs ligadas aos elementos do modelo.</p>
+          <p class="panel-subtitle">Cria novas OTs a partir do elemento selecionado.</p>
         </div>
         <div class="panel-body">
-        <!-- Estado bloqueado (sem item selecionado) -->
-        <div id="ot-locked" class="ot-locked">
-          Para criar uma OT, seleciona primeiro um elemento no modelo.
+          <!-- Estado bloqueado (sem item selecionado) -->
+          <div id="ot-locked" class="ot-locked">
+            Para criar uma OT, seleciona primeiro um elemento no modelo.
+          </div>
+
+          <!-- Apenas o formulário fica dependente da seleção -->
+          <div id="ot-content" class="ot-content" style="display:none">
+            <form id="wo-form" class="form">
+              <label>
+                Título
+                <input id="f-title" required placeholder="Ex.: Porta não fecha" />
+              </label>
+
+              <label>
+                Prioridade
+                <select id="f-priority">
+                  <option>Low</option>
+                  <option selected>Medium</option>
+                  <option>High</option>
+                  <option>Urgent</option>
+                </select>
+              </label>
+
+              <label>
+                Data Limite
+                <input id="f-due" type="date" />
+              </label>
+
+              <label>
+                Ativo / Zona
+                <input id="f-asset" placeholder="Ex.: Bloco A - Piso 1" />
+              </label>
+
+              <label>
+                Element ID
+                <input id="f-element-id" placeholder="Ex.: 993506" />
+              </label>
+
+              <label>
+                Descrição
+                <textarea id="f-desc" rows="3"
+                          placeholder="Explica o problema e o que já foi observado..."></textarea>
+              </label>
+
+              <button type="submit">Criar OT</button>
+            </form>
+          </div>
         </div>
+      </div>
 
-        <!-- Conteúdo completo da OT (form + lista) -->
-        <div id="ot-content" class="ot-content" style="display:none">
-          <form id="wo-form" class="form">
-            <label>
-              Título
-              <input id="f-title" required placeholder="Ex.: Porta não fecha" />
-            </label>
-
-            <label>
-              Prioridade
-              <select id="f-priority">
-                <option>Low</option>
-                <option selected>Medium</option>
-                <option>High</option>
-                <option>Urgent</option>
-              </select>
-            </label>
-
-            <label>
-              Data Limite
-              <input id="f-due" type="date" />
-            </label>
-
-            <label>
-              Ativo / Zona
-              <input id="f-asset" placeholder="Ex.: Bloco A - Piso 1" />
-            </label>
-
-            <label>
-              Descrição
-              <textarea id="f-desc" rows="3"
-                        placeholder="Explica o problema e o que já foi observado..."></textarea>
-            </label>
-
-            <button type="submit">Criar OT</button>
-          </form>
-
-          <h3 class="list-title">OTs registadas</h3>
+      <!-- OTs registadas (sempre visíveis) -->
+      <div class="panel ot-list-panel">
+        <div class="panel-header">
+          <h2>OTs registadas</h2>
+          <p class="panel-subtitle">Consulta todas as OTs, mesmo sem elemento selecionado.</p>
+        </div>
+        <div class="panel-body">
           <ul id="wo-list" class="wo-list"></ul>
           <p id="wo-empty" class="empty-state" style="display:none">Ainda não há OTs.</p>
         </div>
@@ -511,68 +525,6 @@ const accountLink = document.getElementById('account-link');
     }
   });
 })();
-
-const form = document.getElementById('wo-form');
-
-form.addEventListener('submit', async (e) => {
-  e.preventDefault();
-
-  const title = document.getElementById('f-title').value.trim();
-  const asset = document.getElementById('f-asset').value.trim();
-  const priority = document.getElementById('f-priority').value;
-  const due = document.getElementById('f-due').value;
-  const description = document.getElementById('f-desc').value.trim();
-
-  if (!title || !asset) {
-    alert("Preenche Título e Ativo / Zona.");
-    return;
-  }
-
-  const allowedPriorities = ["Low", "Medium", "High", "Urgent"];
-  if (!allowedPriorities.includes(priority)) {
-    alert("Seleciona uma prioridade válida.");
-    return;
-  }
-
-  const payload = {
-    "Título": title,
-    "Prioridade": priority,
-    "Data Limite": due,
-    "Ativo / Zona": asset,
-    "Descrição": description
-  };
-
-  try {
-    const response = await fetch('/api/add', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    const data = await response.json();
-
-    if (data.error) {
-      alert("Erro ao criar OT: " + (data.error.message || JSON.stringify(data.error)));
-      console.error("Erro Airtable:", data.error);
-      return;
-    }
-
-    alert("OT criada com sucesso!");
-    form.reset();
-
-    const woList = document.getElementById('wo-list');
-    const li = document.createElement('li');
-    li.textContent = `${data.fields.Título} - ${data.fields.Prioridade} - ${data.fields["Ativo / Zona"]}`;
-    woList.appendChild(li);
-
-    const emptyState = document.getElementById('wo-empty');
-    if (emptyState.style.display !== "none") emptyState.style.display = "none";
-
-  } catch (err) {
-    console.error('Erro ao criar OT:', err);
-    alert('Erro ao criar OT. Veja o console.');
-  }
-});
 </script>
 
     <script>

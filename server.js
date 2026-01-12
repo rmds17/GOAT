@@ -59,6 +59,40 @@ const ACCOUNT_FIELDS = {
   email: 'Email',
   passwordHash: 'Password'
 };
+const WORKORDER_FIELD_OPTIONS = {
+  title: ['Título'],
+  priority: ['Prioridade'],
+  dueDate: ['Data Limite'],
+  asset: ['Ativo / Zona'],
+  description: ['Descrição'],
+  elementId: ['Element ID']
+};
+
+const WORKORDER_FIELDS = {};
+const WORKORDER_FIELD_INDEX = {};
+const FIELD_NAME_TO_KEY = {};
+
+Object.entries(WORKORDER_FIELD_OPTIONS).forEach(([key, options]) => {
+  WORKORDER_FIELD_INDEX[key] = 0;
+  WORKORDER_FIELDS[key] = options?.[0] || '';
+  options.forEach((name) => {
+    if (!name) return;
+    FIELD_NAME_TO_KEY[name.toLowerCase()] = key;
+  });
+});
+
+const OPTIONAL_WORKORDER_KEYS = new Set([
+  'priority',
+  'dueDate',
+  'asset',
+  'description',
+  'elementId'
+]);
+
+function isOptionalWorkOrderKey(key) {
+  return OPTIONAL_WORKORDER_KEYS.has(key);
+}
+
 const htmlPath = (file) => path.join(__dirname, 'public', 'html', file);
 
 app.use(express.json());
@@ -117,17 +151,31 @@ async function listRecords(tablePath, params = {}) {
 }
 
 async function createRecord(tablePath, fields) {
-  return airtableRequest(tablePath, {
-    method: 'POST',
-    body: JSON.stringify({ fields })
-  });
+  try {
+    return await airtableRequest(tablePath, {
+      method: 'POST',
+      body: JSON.stringify({ fields })
+    });
+  } catch (err) {
+    if (handleUnknownFieldError(err, fields)) {
+      return createRecord(tablePath, fields);
+    }
+    throw err;
+  }
 }
 
 async function updateRecord(tablePath, id, fields) {
-  return airtableRequest(`${tablePath}/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ fields })
-  });
+  try {
+    return await airtableRequest(`${tablePath}/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ fields })
+    });
+  } catch (err) {
+    if (handleUnknownFieldError(err, fields)) {
+      return updateRecord(tablePath, id, fields);
+    }
+    throw err;
+  }
 }
 
 async function deleteRecord(tablePath, id) {
@@ -157,6 +205,159 @@ function mapAccount(record, options = {}) {
     email: f[ACCOUNT_FIELDS.email] || '',
     ...(includePassword ? { passwordHash: f[ACCOUNT_FIELDS.passwordHash] || '' } : {})
   };
+}
+
+function getFieldOptions(key) {
+  return WORKORDER_FIELD_OPTIONS[key] || [];
+}
+
+function readWorkOrderField(fields, key) {
+  const options = getFieldOptions(key);
+  for (const name of options) {
+    if (!name) continue;
+    const value = fields[name];
+    if (value !== undefined && value !== null && value !== '') {
+      return value;
+    }
+  }
+  return '';
+}
+
+function resolveFieldName(key) {
+  return WORKORDER_FIELDS[key] || getFieldOptions(key)[0] || '';
+}
+
+function advanceFieldName(key) {
+  const options = getFieldOptions(key);
+  if (!options || options.length <= 1) return false;
+  const currentIndex = WORKORDER_FIELD_INDEX[key] || 0;
+  const nextIndex = (currentIndex + 1) % options.length;
+  if (nextIndex === currentIndex) return false;
+  WORKORDER_FIELD_INDEX[key] = nextIndex;
+  WORKORDER_FIELDS[key] = options[nextIndex];
+  console.warn(`[airtable] Switching field mapping for "${key}" to "${WORKORDER_FIELDS[key]}"`);
+  return true;
+}
+
+function safeJSONParse(value) {
+  if (typeof value !== 'string') return value || null;
+  try {
+    return JSON.parse(value);
+  } catch (_err) {
+    return null;
+  }
+}
+
+function mapWorkOrder(record) {
+  if (!record) return null;
+  const f = record.fields || {};
+  return {
+    id: record.id,
+    code: record.id.slice(-6),
+    title: readWorkOrderField(f, 'title') || '',
+    priority: readWorkOrderField(f, 'priority') || 'Medium',
+    dueDate: readWorkOrderField(f, 'dueDate') || '',
+    asset: readWorkOrderField(f, 'asset') || '',
+    description: readWorkOrderField(f, 'description') || '',
+    elementId: readWorkOrderField(f, 'elementId') || ''
+  };
+}
+
+function buildWorkOrderFields(payload = {}) {
+  const fields = {};
+  const setField = (key, value) => {
+    if (value === undefined || value === null) return;
+    const fieldName = resolveFieldName(key);
+    if (!fieldName) return;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return;
+      if (key === 'elementId') {
+        const numeric = Number(trimmed);
+        if (Number.isNaN(numeric)) return;
+        fields[fieldName] = numeric;
+      } else {
+        fields[fieldName] = trimmed;
+      }
+      return;
+    }
+    if (key === 'elementId') {
+      const numeric = Number(value);
+      if (Number.isNaN(numeric)) return;
+      fields[fieldName] = numeric;
+      return;
+    }
+    fields[fieldName] = value;
+  };
+
+  setField('title', payload.title);
+  setField('priority', payload.priority);
+  setField('dueDate', payload.dueDate);
+  setField('asset', payload.asset);
+  setField('description', payload.description);
+  setField('elementId', payload.elementId);
+
+  if (!Object.prototype.hasOwnProperty.call(fields, '__aliasTries')) {
+    Object.defineProperty(fields, '__aliasTries', {
+      value: {},
+      enumerable: false,
+      configurable: true,
+      writable: true
+    });
+  }
+
+  return fields;
+}
+
+function extractUnknownFieldName(err) {
+  const detail = err?.details?.error || err?.details || null;
+  if (!detail || typeof detail !== 'object') return null;
+  const type = detail.type || detail.error?.type;
+  if (type !== 'UNKNOWN_FIELD_NAME' && type !== 'INVALID_REQUEST_UNKNOWN_FIELD_NAME') {
+    return null;
+  }
+  const message = detail.message || '';
+  const match = message.match(/"([^"\\]+)"/);
+  return match ? match[1] : null;
+}
+
+function handleUnknownFieldError(err, fields) {
+  const fieldName = extractUnknownFieldName(err);
+  if (!fieldName) return false;
+  const key = FIELD_NAME_TO_KEY[fieldName.toLowerCase()];
+  if (!key) return false;
+  if (!fields.__aliasTries) {
+    Object.defineProperty(fields, '__aliasTries', {
+      value: {},
+      enumerable: false,
+      configurable: true,
+      writable: true
+    });
+  }
+  const options = getFieldOptions(key);
+  const previousTries = fields.__aliasTries[key] || 0;
+  if (!options || previousTries >= (options.length - 1)) {
+    if (isOptionalWorkOrderKey(key)) {
+      if (fields && Object.prototype.hasOwnProperty.call(fields, fieldName)) {
+        delete fields[fieldName];
+      }
+      console.warn(`[airtable] Dropping optional workorder field "${fieldName}" (key "${key}") because Airtable column is missing`);
+      fields.__aliasTries[key] = options.length || previousTries + 1;
+      return true;
+    }
+    return false;
+  }
+  const advanced = advanceFieldName(key);
+  if (!advanced) return false;
+  fields.__aliasTries[key] = previousTries + 1;
+  const newName = resolveFieldName(key);
+  if (!newName) return false;
+  if (fields && Object.prototype.hasOwnProperty.call(fields, fieldName)) {
+    fields[newName] = fields[fieldName];
+    delete fields[fieldName];
+  }
+  console.warn(`[airtable] Retrying request using fallback field "${newName}" for key "${key}"`);
+  return true;
 }
 
 
@@ -337,6 +538,67 @@ app.get('/api/airtable', async (req, res) => {
     res.json(data);
   } catch (err) {
     res.status(err.status || 500).json({ ok: false, error: 'AIRTABLE_FETCH_FAILED', details: err.details });
+  }
+});
+
+app.get('/api/workorders', async (_req, res) => {
+  try {
+    const params = { maxRecords: 200 };
+    const sortField = resolveFieldName('title');
+    if (sortField) {
+      params['sort[0][field]'] = sortField;
+      params['sort[0][direction]'] = 'desc';
+    }
+    const data = await listRecords(WORKORDER_TABLE_PATH, params);
+    const items = (data.records || []).map(mapWorkOrder);
+    res.json({ ok: true, items });
+  } catch (err) {
+    console.error('List workorders failed:', err);
+    res.status(err.status || 500).json({ ok: false, error: 'LIST_WORKORDERS_FAILED', details: err.details });
+  }
+});
+
+app.post('/api/workorders', async (req, res) => {
+  try {
+    const payload = req.body || {};
+    if (!payload.title || !payload.title.trim()) {
+      return res.status(400).json({ ok: false, error: 'TITLE_REQUIRED' });
+    }
+    const fields = buildWorkOrderFields(payload);
+    const created = await createRecord(WORKORDER_TABLE_PATH, fields);
+    res.json({ ok: true, item: mapWorkOrder(created) });
+  } catch (err) {
+    console.error('Create workorder failed:', err);
+    res.status(err.status || 500).json({ ok: false, error: 'CREATE_WORKORDER_FAILED', details: err.details });
+  }
+});
+
+app.patch('/api/workorders/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ ok: false, error: 'WORKORDER_ID_REQUIRED' });
+    const payload = req.body || {};
+    const fields = buildWorkOrderFields(payload);
+    if (Object.keys(fields).length === 0) {
+      return res.status(400).json({ ok: false, error: 'NO_FIELDS_TO_UPDATE' });
+    }
+    const updated = await updateRecord(WORKORDER_TABLE_PATH, id, fields);
+    res.json({ ok: true, item: mapWorkOrder(updated) });
+  } catch (err) {
+    console.error('Update workorder failed:', err);
+    res.status(err.status || 500).json({ ok: false, error: 'UPDATE_WORKORDER_FAILED', details: err.details });
+  }
+});
+
+app.delete('/api/workorders/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ ok: false, error: 'WORKORDER_ID_REQUIRED' });
+    await deleteRecord(WORKORDER_TABLE_PATH, id);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Delete workorder failed:', err);
+    res.status(err.status || 500).json({ ok: false, error: 'DELETE_WORKORDER_FAILED', details: err.details });
   }
 });
 

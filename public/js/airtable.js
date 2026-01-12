@@ -39,33 +39,40 @@ async function renderList() {
   let items = [];
   try { items = await listWorkOrders(); } catch (e) { console.error(e); }
 
-  if (!items.length) { empty.style.display = 'block'; return; }
+  if (!items.length) {
+    empty.style.display = 'block';
+    window.dispatchEvent(new CustomEvent('workorders:updated', { detail: [] }));
+    return;
+  }
   empty.style.display = 'none';
 
   items.forEach(wo => {
     const li = document.createElement('li');
-    li.className = 'wo' + (wo.status === 'Done' ? ' done' : '');
+    li.className = 'wo';
     li.innerHTML = `
       <div class="wo-head">
         <span class="code">${wo.code}</span>
         <span class="title">${wo.title || ''}</span>
       </div>
       <div class="wo-meta">
-        <span>Status: ${wo.status}</span>
         <span>Prioridade: ${wo.priority}</span>
         ${wo.dueDate ? `<span>Limite: ${wo.dueDate.slice(0,10)}</span>` : ''}
         ${wo.asset ? `<span>Ativo: ${wo.asset}</span>` : ''}
-        ${wo.componentGlobalId ? `<span>Elem: ${wo.componentGlobalId}</span>` : ''}
+        ${wo.elementId ? `<span>Element ID: ${wo.elementId}</span>` : ''}
       </div>
       ${wo.description ? `<p class="desc">${wo.description}</p>` : ''}
       <div class="actions">
-        <button data-action="toggle">${wo.status === 'Done' ? 'Reabrir' : 'Concluir'}</button>
-        <button data-action="delete" class="danger">Apagar</button>
+        <button type="button" data-action="focus" class="ghost">Ver no modelo</button>
+        <button type="button" data-action="delete" class="danger">Apagar</button>
       </div>
     `;
-    li.querySelector('[data-action="toggle"]').onclick = async () => {
-      const next = wo.status === 'Done' ? 'New' : 'Done';
-      try { await updateWorkOrder(wo.id, { status: next }); renderList(); } catch(e){ console.error(e); }
+    li.querySelector('[data-action="focus"]').onclick = (e) => {
+      e.preventDefault();
+      if (!wo.elementId) {
+        alert('Esta OT não tem Element ID associado.');
+        return;
+      }
+      window.dispatchEvent(new CustomEvent('workorders:focus', { detail: { elementId: wo.elementId, id: wo.id } }));
     };
     li.querySelector('[data-action="delete"]').onclick = async () => {
       if (confirm(`Apagar ${wo.code}?`)) {
@@ -74,6 +81,8 @@ async function renderList() {
     };
     list.appendChild(li);
   });
+
+  window.dispatchEvent(new CustomEvent('workorders:updated', { detail: items }));
 }
 
 function initForm() {
@@ -84,13 +93,16 @@ function initForm() {
     const priority = document.getElementById('f-priority').value;
     const dueDate = document.getElementById('f-due').value;
     const asset = document.getElementById('f-asset').value.trim();
+    const elementId = document.getElementById('f-element-id').value.trim();
     const description = document.getElementById('f-desc').value.trim();
     try {
       const wo = await createWorkOrder({
-        title, priority, dueDate, asset, description,
-        componentGlobalId: picked.globalId || '',
-        componentType: picked.type || '',
-        status: 'New'
+        title,
+        priority,
+        dueDate,
+        asset,
+        description,
+        elementId
       });
       form.reset();
       document.getElementById('picked-gid').textContent = '—';

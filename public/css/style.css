@@ -76,6 +76,7 @@ body { margin: 0; font-family: system-ui, Arial, sans-serif; background: #f6f7f9
 .desc { margin: 8px 0 0; color: #333; }
 .actions { display: flex; gap: 8px; margin-top: 8px; }
 .actions .danger { background: #d7263d; color: #fff; }
+.actions .ghost { background: #f3f4f6; color: #111827; border: 1px solid #d1d5db; }
 
 
 /* MODAL PARA CARREGAR MODELO */

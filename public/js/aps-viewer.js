@@ -2,6 +2,22 @@
 
 let viewer;
 let picked = { globalId: '', type: '' };
+let geometryReady = false;
+let THREE_REF = null;
+const elementIdDbIdCache = new Map();
+const ELEMENT_ID_PROPERTY_NAMES = [
+  'ElementId',
+  'Element ID',
+  'Element Id',
+  'ElementID',
+  'Revit Element Id',
+  'Revit Element ID',
+  'Id do elemento',
+  'ID do elemento'
+];
+const ELEMENT_ID_FALLBACK_LIMIT = 25;
+const ELEMENT_ID_PROPERTY_NORMALIZED = ELEMENT_ID_PROPERTY_NAMES.map(name => normalizePropertyName(name));
+let pendingElementFocus = null;
 
 console.log('[APS] Script loaded');
 
@@ -75,12 +91,145 @@ function setOTEnabled(enabled) {
   }
 }
 
+// ---------------- ELEMENT FOCUS HELPERS ----------------
+
+function getThreeRef() {
+  if (THREE_REF) return THREE_REF;
+  if (window.THREE) {
+    THREE_REF = window.THREE;
+    return THREE_REF;
+  }
+  if (window.Autodesk && window.Autodesk.Viewing && window.Autodesk.Viewing.THREE) {
+    THREE_REF = window.Autodesk.Viewing.THREE;
+    return THREE_REF;
+  }
+  return null;
+}
+
+function normalizePropertyName(name = '') {
+  if (!name) return '';
+  let normalized = String(name);
+  if (typeof normalized.normalize === 'function') {
+    normalized = normalized.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+  return normalized.replace(/[^a-zA-Z0-9]+/g, ' ').trim().toLowerCase();
+}
+
+function isMatchingElementIdPropertyName(name = '') {
+  const normalized = normalizePropertyName(name);
+  if (!normalized) return false;
+  if (ELEMENT_ID_PROPERTY_NORMALIZED.includes(normalized)) return true;
+  return ELEMENT_ID_PROPERTY_NORMALIZED.some(target => target && normalized.includes(target));
+}
+
+function findElementIdProperty(props = []) {
+  return props.find(prop => isMatchingElementIdPropertyName(prop.displayName));
+}
+
+function extractNumericElementId(value) {
+  if (value == null || value === '') return null;
+  const numeric = Number(String(value).trim());
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function viewerSearchAsync(term, attrNames) {
+  return new Promise((resolve) => {
+    viewer.search(
+      term,
+      (dbIds) => resolve(Array.isArray(dbIds) ? dbIds : []),
+      () => resolve([]),
+      attrNames && attrNames.length ? attrNames : undefined
+    );
+  });
+}
+
+function getPropertiesAsync(dbId) {
+  return new Promise((resolve) => {
+    viewer.getProperties(
+      dbId,
+      (result) => resolve(result || null),
+      () => resolve(null)
+    );
+  });
+}
+
+async function searchSingleDbId(term, attrNames) {
+  const matches = await viewerSearchAsync(term, attrNames);
+  return matches.length ? matches[0] : null;
+}
+
+async function searchDbIdWithVerification(term, numericId) {
+  const matches = await viewerSearchAsync(term);
+  if (!matches.length) return null;
+
+  const limit = Math.min(matches.length, ELEMENT_ID_FALLBACK_LIMIT);
+  for (let i = 0; i < limit; i += 1) {
+    const candidate = matches[i];
+    const propsResult = await getPropertiesAsync(candidate);
+    if (!propsResult || !Array.isArray(propsResult.properties)) continue;
+
+    const prop = findElementIdProperty(propsResult.properties);
+    const propNumericValue = extractNumericElementId(prop?.displayValue);
+    if (prop && propNumericValue === numericId) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+async function fetchDbIdForElement(elementId) {
+  const numericId = Number(elementId);
+  if (!Number.isFinite(numericId)) return null;
+
+  const searchTerm = String(numericId);
+  const directMatch = await searchSingleDbId(searchTerm, ELEMENT_ID_PROPERTY_NAMES);
+  if (directMatch != null) {
+    elementIdDbIdCache.set(numericId, directMatch);
+    return directMatch;
+  }
+
+  console.log('[APS] Element ID direct search failed, trying fallback scan for', numericId);
+  const verifiedMatch = await searchDbIdWithVerification(searchTerm, numericId);
+  elementIdDbIdCache.set(numericId, verifiedMatch ?? null);
+  return verifiedMatch ?? null;
+}
+
+async function focusElementByElementId(elementId, options = {}) {
+  if (!viewer || !geometryReady) {
+    pendingElementFocus = elementId;
+    return;
+  }
+  const numericId = Number(String(elementId).trim());
+  if (!Number.isFinite(numericId) || numericId <= 0) {
+    console.warn('[APS] Invalid Element ID provided:', elementId);
+    return;
+  }
+  let dbId = elementIdDbIdCache.get(numericId);
+  if (dbId === undefined) {
+    console.log('[APS] Searching for Element ID', numericId);
+    dbId = await fetchDbIdForElement(numericId);
+  }
+  if (!Number.isFinite(dbId) || dbId === null) {
+    console.warn('[APS] No element found for Element ID', numericId);
+    alert('Não encontrei o elemento com esse Element ID no modelo. Confirma se foi carregado o mesmo modelo.');
+    return;
+  }
+
+  console.log('[APS] Focusing dbId', dbId, 'for Element ID', numericId);
+  viewer.clearSelection();
+  viewer.select([dbId]);
+  if (options.fitToView !== false) {
+    viewer.fitToView([dbId]);
+  }
+}
+
 // ---------------- PROPRIEDADES ----------------
 
-function updatePropertiesPanel(result, propsContainer) {
-  if (!result) return;
+function updatePropertiesPanel(result, propsContainer, dbId) {
+  if (!result) return null;
 
-  const props = result.properties || [];
+  const props = Array.isArray(result.properties) ? result.properties : [];
 
   // GlobalId / IfcGUID / externalId
   const gidProp =
@@ -125,11 +274,17 @@ function updatePropertiesPanel(result, propsContainer) {
     );
   }
 
-  const elId = findProp('ElementId');
+  const elementIdProp = findElementIdProperty(props);
   const cat = findProp('Category');
   const catId = findProp('CategoryId');
 
-  if (elId) addGeneral('Element ID', elId.displayValue);
+  if (elementIdProp) {
+    addGeneral(elementIdProp.displayName || 'Element ID', elementIdProp.displayValue);
+    const cachedValue = extractNumericElementId(elementIdProp.displayValue);
+    if (dbId != null && cachedValue != null) {
+      elementIdDbIdCache.set(cachedValue, dbId);
+    }
+  }
   if (cat) addGeneral('Category', cat.displayValue);
   if (catId) addGeneral('Category ID', catId.displayValue);
 
@@ -232,6 +387,8 @@ function updatePropertiesPanel(result, propsContainer) {
     type: picked.type,
     propsCount: props.length
   });
+
+  return elementIdProp ? elementIdProp.displayValue : null;
 }
 
 // ---------------- EVENTO DE SELEÇÃO ----------------
@@ -266,7 +423,11 @@ function onSelectionChanged(event) {
   viewer.getProperties(
     dbId,
     function (result) {
-      updatePropertiesPanel(result, propsContainer);
+      const elementIdValue = updatePropertiesPanel(result, propsContainer, dbId);
+      const elementIdLabel = document.getElementById('picked-element-id');
+      if (elementIdLabel) {
+        elementIdLabel.textContent = elementIdValue ?? '—';
+      }
     },
     function (err) {
       console.error('[APS] Erro em getProperties:', err);
@@ -274,6 +435,17 @@ function onSelectionChanged(event) {
     }
   );
 }
+
+window.addEventListener('workorders:focus', (event) => {
+  const detail = event.detail || {};
+  const elementId = detail.elementId || detail.ElementId || detail.element_id;
+  if (!elementId) {
+    alert('Esta OT não tem um Element ID associado.');
+    return;
+  }
+  focusElementByElementId(elementId);
+});
+
 
 // ---------------- INICIALIZAÇÃO DO VIEWER ----------------
 
@@ -312,9 +484,25 @@ async function initViewer() {
         viewer.start();
         console.log('[APS] Viewer started successfully');
 
+        const threeNs = getThreeRef();
+        if (threeNs && viewer.setSelectionColor) {
+          viewer.setSelectionColor(new threeNs.Color(0x2563eb));
+        }
+
         viewer.addEventListener(
           Autodesk.Viewing.SELECTION_CHANGED_EVENT,
           onSelectionChanged
+        );
+        viewer.addEventListener(
+          Autodesk.Viewing.GEOMETRY_LOADED_EVENT,
+          () => {
+            geometryReady = true;
+            if (pendingElementFocus) {
+              const pending = pendingElementFocus;
+              pendingElementFocus = null;
+              focusElementByElementId(pending);
+            }
+          }
         );
       } catch (err) {
         console.error('[APS] Error during viewer initialization:', err);
