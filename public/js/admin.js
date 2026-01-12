@@ -268,6 +268,13 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  const logoButton = document.getElementById('admin-logo');
+  if (logoButton) {
+    logoButton.addEventListener('click', () => {
+      window.location.href = '/';
+    });
+  }
+
   const gateForm = document.getElementById('admin-gate-form');
   if (gateForm) {
     gateForm.addEventListener('submit', handleGateSubmit);

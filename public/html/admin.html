@@ -27,6 +27,21 @@
       font-weight: 800;
       letter-spacing: 0.12em;
     }
+    .logo-button {
+      border: none;
+      background: transparent;
+      text-align: left;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      color: #0f172a;
+      cursor: pointer;
+    }
+    .logo-button:focus-visible {
+      outline: 2px solid #0f62fe;
+      outline-offset: 4px;
+      border-radius: 8px;
+    }
     .admin-wrapper {
       max-width: 980px;
       margin: 40px auto;
@@ -144,12 +159,11 @@
 </head>
 <body>
   <header>
-    <div>
+    <button id="admin-logo" class="logo-button" type="button">
       <div class="logo">GOAT</div>
       <small>Gestão de OTs — Admin</small>
-    </div>
+    </button>
     <div class="admin-actions">
-      <a href="/" class="secondary">Voltar ao painel</a>
       <button type="button" id="refresh-btn" class="secondary">Atualizar lista</button>
     </div>
   </header>

@@ -125,6 +125,38 @@
       gap: 2px;
     }
 
+    .panel-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .panel-toggle {
+      border: 1px solid #d1d5db;
+      background: #ffffff;
+      color: #111827;
+      padding: 4px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    }
+
+    .panel-toggle:hover {
+      background: #f3f4f6;
+    }
+
+    .panel-toggle.collapsed {
+      background: #0f62fe;
+      border-color: #0f62fe;
+      color: #ffffff;
+    }
+
     .ot-locked {
       font-size: 13px;
       color: #6b7280;
@@ -362,10 +394,15 @@
       <!-- Item selecionado -->
         <div class="panel">
           <div class="panel-header">
-            <h2>Item selecionado</h2>
-            <p class="panel-subtitle">Propriedades BIM do elemento selecionado.</p>
+            <div class="panel-header-row">
+              <div>
+                <h2>Item selecionado</h2>
+                <p class="panel-subtitle">Propriedades BIM do elemento selecionado.</p>
+              </div>
+              <button type="button" id="properties-toggle" class="panel-toggle" aria-expanded="true" title="Esconder/mostrar propriedades">Esconder</button>
+            </div>
           </div>
-          <div class="panel-body">
+          <div class="panel-body" id="properties-panel-body">
       <div class="selected-summary">
         <div class="selected-row">
           <span class="selected-label">GlobalId</span>
@@ -471,7 +508,22 @@
           <p class="panel-subtitle">Consulta todas as OTs, mesmo sem elemento selecionado.</p>
         </div>
         <div class="panel-body">
-          <ul id="wo-list" class="wo-list"></ul>
+          <p id="wo-list-locked" class="empty-state">Carrega o modelo para ver as OTs registadas.</p>
+          <div class="wo-filter" id="wo-filter-controls" style="display:none">
+              <label class="chip small">
+                <input type="radio" name="wo-status-filter" value="all" checked>
+                Todas
+              </label>
+              <label class="chip small">
+                <input type="radio" name="wo-status-filter" value="open">
+                Por concluir
+              </label>
+              <label class="chip small">
+                <input type="radio" name="wo-status-filter" value="done">
+                Terminadas
+              </label>
+            </div>
+          <ul id="wo-list" class="wo-list" style="display:none"></ul>
           <p id="wo-empty" class="empty-state" style="display:none">Ainda não há OTs.</p>
         </div>
       </div>

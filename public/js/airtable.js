@@ -2,6 +2,9 @@ const ACCOUNT_STORAGE_KEY = 'goatAccount';
 const DONE_STATUS_KEYWORDS = ['done', 'concluida', 'concluída', 'completed'];
 let currentAccount = null;
 let accountLoaded = false;
+let cachedWorkOrders = [];
+let workOrderFilter = 'all';
+let isModelReady = false;
 
 function refreshCurrentAccount() {
   try {
@@ -45,10 +48,58 @@ function isWorkOrderDone(wo) {
   return DONE_STATUS_KEYWORDS.includes(normalized);
 }
 
+function passesCurrentFilter(wo) {
+  if (workOrderFilter === 'open') {
+    return !isWorkOrderDone(wo);
+  }
+  if (workOrderFilter === 'done') {
+    return isWorkOrderDone(wo);
+  }
+  return true;
+}
+
+function applyFilter(items = []) {
+  return items.filter(passesCurrentFilter);
+}
+
+function updateEmptyStateElement(emptyEl, totalItems, filteredItems) {
+  if (!emptyEl) return;
+  if (totalItems === 0) {
+    emptyEl.textContent = 'Ainda não há OTs.';
+    emptyEl.style.display = 'block';
+    return;
+  }
+  if (filteredItems === 0) {
+    emptyEl.textContent = 'Nenhuma OT corresponde ao filtro selecionado.';
+    emptyEl.style.display = 'block';
+    return;
+  }
+  emptyEl.style.display = 'none';
+}
+
 function updateAdminLinkVisibility() {
   const adminLink = document.getElementById('admin-link');
   if (!adminLink) return;
   adminLink.style.display = isCurrentUserAdmin() ? '' : 'none';
+}
+
+function setWorkOrderListLocked(locked) {
+  const lockMessage = document.getElementById('wo-list-locked');
+  const filterControls = document.getElementById('wo-filter-controls');
+  const list = document.getElementById('wo-list');
+  const empty = document.getElementById('wo-empty');
+  if (lockMessage) {
+    lockMessage.style.display = locked ? 'block' : 'none';
+  }
+  if (filterControls) {
+    filterControls.style.display = locked ? 'none' : '';
+  }
+  if (list) {
+    list.style.display = locked ? 'none' : '';
+  }
+  if (locked && empty) {
+    empty.style.display = 'none';
+  }
 }
 
 // ======== Airtable via API do nosso servidor ========
@@ -85,22 +136,38 @@ async function removeWorkOrder(id) {
 
 
 // ===== UI de OT =====
-async function renderList() {
+async function renderList(options = {}) {
+  const { skipFetch = false } = options;
   const list = document.getElementById('wo-list');
   const empty = document.getElementById('wo-empty');
   if (!list || !empty) return;
-  list.innerHTML = '';
-  let items = [];
-  try { items = await listWorkOrders(); } catch (e) { console.error(e); }
 
-  if (!items.length) {
-    empty.style.display = 'block';
-    window.dispatchEvent(new CustomEvent('workorders:updated', { detail: [] }));
+  if (!isModelReady) {
+    setWorkOrderListLocked(true);
     return;
   }
-  empty.style.display = 'none';
 
-  items.forEach(wo => {
+  setWorkOrderListLocked(false);
+  list.innerHTML = '';
+  if (!skipFetch || !cachedWorkOrders.length) {
+    try {
+      cachedWorkOrders = await listWorkOrders();
+    } catch (e) {
+      console.error(e);
+      cachedWorkOrders = [];
+    }
+  }
+
+  const sourceItems = Array.isArray(cachedWorkOrders) ? cachedWorkOrders : [];
+  const filteredItems = applyFilter(sourceItems);
+  updateEmptyStateElement(empty, sourceItems.length, filteredItems.length);
+
+  if (!filteredItems.length) {
+    window.dispatchEvent(new CustomEvent('workorders:updated', { detail: sourceItems }));
+    return;
+  }
+
+  filteredItems.forEach(wo => {
     const li = document.createElement('li');
     li.className = 'wo';
     if (isWorkOrderDone(wo)) {
@@ -142,7 +209,7 @@ async function renderList() {
     list.appendChild(li);
   });
 
-  window.dispatchEvent(new CustomEvent('workorders:updated', { detail: items }));
+  window.dispatchEvent(new CustomEvent('workorders:updated', { detail: sourceItems }));
 }
 
 function initForm() {
@@ -191,10 +258,31 @@ function hookSelectedElementToForm() {
   });
 }
 
+function initWorkOrderFilters() {
+  const radios = document.querySelectorAll('input[name="wo-status-filter"]');
+  if (!radios || !radios.length) return;
+  radios.forEach((radio) => {
+    radio.addEventListener('change', (event) => {
+      if (!event.target.checked) return;
+      const { value } = event.target;
+      workOrderFilter = value || 'all';
+      renderList({ skipFetch: true });
+    });
+  });
+}
+
 // arrancar
 window.addEventListener('DOMContentLoaded', () => {
   refreshCurrentAccount();
   initForm();
   hookSelectedElementToForm();
+  initWorkOrderFilters();
+  setWorkOrderListLocked(true);
+});
+
+window.addEventListener('viewer:model-ready', () => {
+  if (isModelReady) return;
+  isModelReady = true;
+  setWorkOrderListLocked(false);
   renderList();
 });

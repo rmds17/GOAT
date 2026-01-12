@@ -58,17 +58,15 @@ function setSelectionUI(selected) {
   const panel = propsContainer.closest('.panel');
   if (!panel) return;
 
-  const header = panel.querySelector('.panel-header');
   const summary = panel.querySelector('.selected-summary');
   const gidEl = document.getElementById('picked-gid');
   const typeEl = document.getElementById('picked-type');
 
-  if (selected) {
-    if (header) header.style.display = 'none';
-    if (summary) summary.style.display = 'none';
-  } else {
-    if (header) header.style.display = '';
-    if (summary) summary.style.display = '';
+  const header = panel.querySelector('.panel-header');
+  if (header) header.style.display = '';
+  if (summary) summary.style.display = selected ? 'none' : '';
+
+  if (!selected) {
     if (gidEl) gidEl.textContent = '—';
     if (typeEl) typeEl.textContent = '—';
   }
@@ -88,6 +86,23 @@ function setOTEnabled(enabled) {
     locked.style.display = '';
     content.style.display = 'none';
     content.style.opacity = '0.4';
+  }
+}
+
+function togglePropertiesPanel(collapsed) {
+  const body = document.getElementById('properties-panel-body');
+  const toggle = document.getElementById('properties-toggle');
+  if (!body || !toggle) return;
+  if (collapsed) {
+    body.style.display = 'none';
+    toggle.classList.add('collapsed');
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.textContent = 'Mostrar';
+  } else {
+    body.style.display = '';
+    toggle.classList.remove('collapsed');
+    toggle.setAttribute('aria-expanded', 'true');
+    toggle.textContent = 'Esconder';
   }
 }
 
@@ -514,6 +529,11 @@ async function initViewer() {
           Autodesk.Viewing.GEOMETRY_LOADED_EVENT,
           () => {
             geometryReady = true;
+            try {
+              window.dispatchEvent(new CustomEvent('viewer:model-ready'));
+            } catch (err) {
+              console.warn('[APS] Failed to dispatch model-ready event', err);
+            }
             if (pendingElementFocus) {
               const pending = pendingElementFocus;
               pendingElementFocus = null;
@@ -620,6 +640,16 @@ let initAttempts = 0;
 
 document.addEventListener('DOMContentLoaded', () => {
   console.log('[APS] DOM loaded');
+  const toggleButton = document.getElementById('properties-toggle');
+  if (toggleButton) {
+    toggleButton.addEventListener('click', () => {
+      const isExpanded = toggleButton.getAttribute('aria-expanded') === 'true';
+      togglePropertiesPanel(isExpanded);
+    });
+  } else {
+    console.warn('[APS] properties toggle button not found');
+  }
+  togglePropertiesPanel(false);
   
   const checkAutodesk = setInterval(() => {
     initAttempts++;
@@ -638,5 +668,5 @@ document.addEventListener('DOMContentLoaded', () => {
       console.warn('[APS] Autodesk library did not load from CDN');
       console.warn('[APS] This might be a network issue or CDN is blocked');
     }
-  }, 15000);
+  }, 20000);
 });
