@@ -80,7 +80,7 @@ function updateEmptyStateElement(emptyEl, totalItems, filteredItems) {
 function updateAdminLinkVisibility() {
   const adminLink = document.getElementById('admin-link');
   if (!adminLink) return;
-  adminLink.style.display = isCurrentUserAdmin() ? '' : 'none';
+  adminLink.style.display = '';
 }
 
 function setWorkOrderListLocked(locked) {

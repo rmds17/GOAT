@@ -48,13 +48,17 @@ function hasAdminOverride() {
 }
 
 function getAuthHeaders() {
+  const headers = { 'Content-Type': 'application/json' };
   const account = readStoredAccount();
-  if (!account) return {};
-  return {
-    'Content-Type': 'application/json',
-    'X-Goat-Email': account.email || '',
-    'X-Goat-Secret': account.passwordHash || ''
-  };
+  if (account && account.email && account.passwordHash) {
+    headers['X-Goat-Email'] = account.email;
+    headers['X-Goat-Secret'] = account.passwordHash;
+  }
+  const overrideEmail = getOverrideEmail();
+  if (overrideEmail) {
+    headers['X-Goat-Admin-Override'] = overrideEmail;
+  }
+  return headers;
 }
 
 function hasDoneStatus(value) {
@@ -80,11 +84,6 @@ async function fetchWorkOrders() {
 
 async function markWorkOrderDone(id, overrideStatus) {
   const headers = getAuthHeaders();
-  if (!headers['X-Goat-Email'] || !headers['X-Goat-Secret']) {
-    const err = new Error('AUTH_REQUIRED');
-    err.code = 'AUTH_REQUIRED';
-    throw err;
-  }
   const body = overrideStatus ? { status: overrideStatus } : {};
   const res = await fetch(`/api/workorders/${encodeURIComponent(id)}/done`, {
     method: 'POST',
@@ -199,8 +198,6 @@ async function loadAndRender() {
 }
 
 function hasAdminPermission() {
-  const account = readStoredAccount();
-  if (isAdminAccount(account)) return true;
   return hasAdminOverride();
 }
 
@@ -257,6 +254,7 @@ async function handleGateSubmit(event) {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+  setOverrideEmail('');
   const refreshBtn = document.getElementById('refresh-btn');
   if (refreshBtn) {
     refreshBtn.addEventListener('click', () => {
