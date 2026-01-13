@@ -173,10 +173,9 @@ async function renderList(options = {}) {
     if (isWorkOrderDone(wo)) {
       li.classList.add('done');
     }
-    const titleText = (wo.title && wo.title.trim()) ? wo.title : `OT ${wo.code}`;
+    const titleText = (wo.title && wo.title.trim()) ? wo.title.trim() : 'OT sem título';
     li.innerHTML = `
       <div class="wo-head">
-        <span class="code">${wo.code}</span>
         <span class="title">${titleText}</span>
       </div>
       <div class="wo-meta">

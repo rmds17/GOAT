@@ -18,6 +18,23 @@ const ELEMENT_ID_PROPERTY_NAMES = [
 const ELEMENT_ID_FALLBACK_LIMIT = 25;
 const ELEMENT_ID_PROPERTY_NORMALIZED = ELEMENT_ID_PROPERTY_NAMES.map(name => normalizePropertyName(name));
 let pendingElementFocus = null;
+const WORKORDER_DONE_KEYWORDS = ['done', 'concluida', 'concluída', 'completed'];
+const OT_MARKER_LAYER_CLASS = 'ot-marker-layer';
+const OT_MARKER_DOT_CLASS = 'ot-marker-dot';
+let latestWorkOrdersSnapshot = null;
+let otMarkerLayer = null;
+const otMarkerEntries = new Map();
+let markerPositionFrame = null;
+let otMarkerUpdateToken = 0;
+let otMarkerPopupEl = null;
+let activeMarkerElementId = null;
+let otHighlightEnabled = true;
+let otBubbleEnabled = true;
+let otHighlightUpdateToken = 0;
+const OT_HIGHLIGHT_COLOR_OPEN = 0xef4444;
+const OT_HIGHLIGHT_COLOR_DONE = 0x22c55e;
+let otHighlightVectorOpen = null;
+let otHighlightVectorDone = null;
 
 console.log('[APS] Script loaded');
 
@@ -138,6 +155,16 @@ function normalizePropertyName(name = '') {
   return normalized.replace(/[^a-zA-Z0-9]+/g, ' ').trim().toLowerCase();
 }
 
+function escapeHtml(value = '') {
+  if (value == null) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function isMatchingElementIdPropertyName(name = '') {
   const normalized = normalizePropertyName(name);
   if (!normalized) return false;
@@ -245,6 +272,455 @@ async function focusElementByElementId(elementId, options = {}) {
   if (options.fitToView !== false) {
     viewer.fitToView([dbId]);
   }
+}
+
+// ---------------- OT MARKER HELPERS ----------------
+
+function readWorkOrderElementId(wo = {}) {
+  if (!wo || typeof wo !== 'object') return null;
+  return wo.elementId ?? wo.ElementId ?? wo.element_id ?? null;
+}
+
+function isWorkOrderActive(wo) {
+  if (!wo) return false;
+  if (wo.completed === true) return false;
+  const status = (wo.status ?? '').toString().trim().toLowerCase();
+  if (status && WORKORDER_DONE_KEYWORDS.includes(status)) return false;
+  return Boolean(readWorkOrderElementId(wo));
+}
+
+function isWorkOrderCompleted(wo) {
+  if (!wo) return false;
+  if (wo.completed === true) return true;
+  const status = (wo.status ?? '').toString().trim().toLowerCase();
+  return Boolean(status && WORKORDER_DONE_KEYWORDS.includes(status));
+}
+
+function groupActiveWorkOrdersByElement(workOrders = []) {
+  const groups = new Map();
+  for (const wo of workOrders) {
+    if (!isWorkOrderActive(wo)) continue;
+    const numericId = extractNumericElementId(readWorkOrderElementId(wo));
+    if (!Number.isFinite(numericId)) continue;
+    if (!groups.has(numericId)) {
+      groups.set(numericId, []);
+    }
+    groups.get(numericId).push(wo);
+  }
+  return groups;
+}
+
+function groupAllWorkOrdersByElement(workOrders = []) {
+  const groups = new Map();
+  for (const wo of workOrders) {
+    const numericId = extractNumericElementId(readWorkOrderElementId(wo));
+    if (!Number.isFinite(numericId)) continue;
+    if (!groups.has(numericId)) {
+      groups.set(numericId, []);
+    }
+    groups.get(numericId).push(wo);
+  }
+  return groups;
+}
+
+function ensureOtMarkerLayer() {
+  if (otMarkerLayer && otMarkerLayer.isConnected) return otMarkerLayer;
+  const container = document.getElementById('viewerContainer');
+  if (!container) return null;
+  const computed = window.getComputedStyle(container);
+  if (!computed || computed.position === 'static') {
+    container.style.position = 'relative';
+  }
+  const layer = document.createElement('div');
+  layer.className = OT_MARKER_LAYER_CLASS;
+  layer.style.position = 'absolute';
+  layer.style.inset = '0';
+  layer.style.pointerEvents = 'none';
+  layer.style.zIndex = '5';
+  container.appendChild(layer);
+  otMarkerLayer = layer;
+  applyOtMarkerLayerVisibility();
+  return otMarkerLayer;
+}
+
+function resetOtMarkerLayer() {
+  if (otMarkerLayer) {
+    otMarkerLayer.innerHTML = '';
+  }
+  otMarkerEntries.clear();
+}
+
+function applyOtMarkerLayerVisibility() {
+  if (!otMarkerLayer) return;
+  otMarkerLayer.style.display = otBubbleEnabled ? 'block' : 'none';
+}
+
+function getDbIdWorldCenter(dbId) {
+  if (!viewer || !viewer.model) return null;
+  const threeNs = getThreeRef();
+  if (!threeNs) return null;
+  const tree = viewer.model.getData()?.instanceTree;
+  const fragList = viewer.model.getFragmentList();
+  if (!tree || !fragList) return null;
+
+  const bounds = new threeNs.Box3();
+  const fragBounds = new threeNs.Box3();
+
+  tree.enumNodeFragments(
+    dbId,
+    (fragId) => {
+      fragList.getWorldBounds(fragId, fragBounds);
+      bounds.union(fragBounds);
+    },
+    true
+  );
+
+  if (bounds.isEmpty()) return null;
+
+  const center = new threeNs.Vector3();
+  bounds.getCenter(center);
+  return center;
+}
+
+function renderOtMarkers(markers = []) {
+  if (!markers.length) {
+    resetOtMarkerLayer();
+    hideOtMarkerPopup();
+    requestMarkerPositionUpdate(true);
+    return;
+  }
+
+  const layer = ensureOtMarkerLayer();
+  if (!layer) return;
+  applyOtMarkerLayerVisibility();
+
+  layer.innerHTML = '';
+  otMarkerEntries.clear();
+  hideOtMarkerPopup();
+
+  markers.forEach(({ elementId, center, workOrders }) => {
+    const dot = document.createElement('span');
+    dot.className = OT_MARKER_DOT_CLASS;
+    dot.dataset.elementId = String(elementId);
+    dot.title = `OT ativa no Element ID ${elementId}`;
+    layer.appendChild(dot);
+    const entry = {
+      elementId,
+      el: dot,
+      world: center.clone(),
+      workOrders: Array.isArray(workOrders) ? workOrders : [],
+      screen: { x: null, y: null }
+    };
+    otMarkerEntries.set(elementId, entry);
+    dot.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      showOtMarkerPopup(entry, event);
+    });
+  });
+
+  requestMarkerPositionUpdate(true);
+}
+
+function ensureOtMarkerPopup() {
+  if (otMarkerPopupEl && otMarkerPopupEl.isConnected) return otMarkerPopupEl;
+  const container = document.getElementById('viewerContainer');
+  if (!container) return null;
+  const popup = document.createElement('div');
+  popup.className = 'ot-marker-popup';
+  popup.style.position = 'absolute';
+  popup.style.display = 'none';
+  popup.style.pointerEvents = 'auto';
+  popup.addEventListener('click', (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    if (target.closest('.ot-popup-close')) {
+      event.preventDefault();
+      hideOtMarkerPopup();
+      return;
+    }
+    const focusBtn = target.closest('[data-action="focus-ot"]');
+    if (focusBtn) {
+      event.preventDefault();
+      const workOrderId = focusBtn.getAttribute('data-work-order-id');
+      const elementId = Number(focusBtn.getAttribute('data-element-id')) || null;
+      hideOtMarkerPopup();
+      if (elementId) {
+        window.dispatchEvent(new CustomEvent('workorders:focus', {
+          detail: { elementId, id: workOrderId || undefined }
+        }));
+      }
+    }
+  });
+  container.appendChild(popup);
+  otMarkerPopupEl = popup;
+  return popup;
+}
+
+function hideOtMarkerPopup() {
+  if (!otMarkerPopupEl) return;
+  otMarkerPopupEl.style.display = 'none';
+  otMarkerPopupEl.innerHTML = '';
+  activeMarkerElementId = null;
+}
+
+function isOtMarkerPopupVisible() {
+  return Boolean(otMarkerPopupEl && otMarkerPopupEl.style.display === 'block');
+}
+
+function buildOtPopupList(workOrders = [], fallbackElementId = null) {
+  if (!workOrders.length) {
+    return '<p class="ot-popup-empty">Sem OTs ativas neste elemento.</p>';
+  }
+  return `
+    <ul class="ot-popup-list">
+      ${workOrders.map((wo) => {
+        const title = escapeHtml(wo.title || 'OT sem título');
+        const description = escapeHtml(wo.description || 'Sem descrição disponível.');
+        const elementIdValue = wo.elementId ?? wo.ElementId ?? wo.element_id ?? fallbackElementId;
+        return `
+          <li class="ot-popup-item">
+            <div class="ot-popup-item-main">
+              <span class="ot-popup-title">${title}</span>
+            </div>
+            <p class="ot-popup-desc">${description}</p>
+            <button type="button" data-action="focus-ot" data-work-order-id="${escapeHtml(wo.id || '')}" data-element-id="${escapeHtml(elementIdValue || '')}">
+              Ver no modelo
+            </button>
+          </li>
+        `;
+      }).join('')}
+    </ul>
+  `;
+}
+
+function positionOtMarkerPopup(entry, clickEvent) {
+  if (!isOtMarkerPopupVisible() || !otMarkerPopupEl) return;
+  const container = document.getElementById('viewerContainer');
+  if (!container) return;
+  const rect = container.getBoundingClientRect();
+  let x = entry?.screen?.x;
+  let y = entry?.screen?.y;
+  if (clickEvent && clickEvent.clientX != null) {
+    x = clickEvent.clientX - rect.left;
+    y = clickEvent.clientY - rect.top;
+  }
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    x = rect.width / 2;
+    y = rect.height / 2;
+  }
+  const width = otMarkerPopupEl.offsetWidth || 240;
+  const height = otMarkerPopupEl.offsetHeight || 140;
+  let left = x + 14;
+  let top = y - (height + 14);
+  left = Math.min(Math.max(8, left), Math.max(8, rect.width - width - 8));
+  top = Math.min(Math.max(8, top), Math.max(8, rect.height - height - 8));
+  otMarkerPopupEl.style.left = `${left}px`;
+  otMarkerPopupEl.style.top = `${top}px`;
+}
+
+function showOtMarkerPopup(entry, clickEvent) {
+  if (!entry) return;
+  const popup = ensureOtMarkerPopup();
+  if (!popup) return;
+  const workOrders = Array.isArray(entry.workOrders) ? entry.workOrders : [];
+  const headerCount = workOrders.length === 1 ? '1 OT ativa' : `${workOrders.length} OTs ativas`;
+  popup.innerHTML = `
+    <div class="ot-popup-head">
+      <div>
+        <div class="ot-popup-label">Element ID</div>
+        <div class="ot-popup-element">${escapeHtml(entry.elementId)}</div>
+        <div class="ot-popup-count">${headerCount}</div>
+      </div>
+      <button type="button" class="ot-popup-close" aria-label="Fechar">x</button>
+    </div>
+    ${buildOtPopupList(workOrders, entry.elementId)}
+  `;
+  popup.style.display = 'block';
+  popup.dataset.elementId = String(entry.elementId);
+  activeMarkerElementId = entry.elementId;
+  positionOtMarkerPopup(entry, clickEvent);
+}
+
+function setOtBubbleEnabledState(enabled) {
+  otBubbleEnabled = Boolean(enabled);
+  applyOtMarkerLayerVisibility();
+  if (!otBubbleEnabled) {
+    hideOtMarkerPopup();
+    resetOtMarkerLayer();
+    return;
+  }
+  rebuildOtMarkersFromLatest();
+}
+
+function getHighlightVector(colorHex, cacheKey) {
+  const threeNs = getThreeRef();
+  if (!threeNs) return null;
+  let target = cacheKey === 'open' ? otHighlightVectorOpen : otHighlightVectorDone;
+  if (target) return target;
+  const color = new threeNs.Color(colorHex);
+  target = new threeNs.Vector4(color.r, color.g, color.b, 1);
+  if (cacheKey === 'open') {
+    otHighlightVectorOpen = target;
+  } else {
+    otHighlightVectorDone = target;
+  }
+  return target;
+}
+
+function determineHighlightColor(workOrders = []) {
+  let hasOpen = false;
+  let hasDone = false;
+  for (const wo of workOrders) {
+    if (isWorkOrderCompleted(wo)) {
+      hasDone = true;
+    } else {
+      hasOpen = true;
+      break;
+    }
+  }
+  if (hasOpen) return getHighlightVector(OT_HIGHLIGHT_COLOR_OPEN, 'open');
+  if (hasDone) return getHighlightVector(OT_HIGHLIGHT_COLOR_DONE, 'done');
+  return null;
+}
+
+async function rebuildOtHighlightsFromLatest() {
+  const runToken = ++otHighlightUpdateToken;
+  if (!viewer || !geometryReady || !viewer.model) return;
+  const model = viewer.model;
+  if (typeof viewer.clearThemingColors === 'function') {
+    viewer.clearThemingColors(model);
+  }
+  if (!otHighlightEnabled) return;
+  if (!Array.isArray(latestWorkOrdersSnapshot) || !latestWorkOrdersSnapshot.length) return;
+
+  const grouped = groupAllWorkOrdersByElement(latestWorkOrdersSnapshot);
+  if (!grouped.size) return;
+  const threeNs = getThreeRef();
+  if (!threeNs) return;
+
+  for (const [elementId, workOrders] of grouped.entries()) {
+    if (runToken !== otHighlightUpdateToken) return;
+    let dbId = elementIdDbIdCache.get(elementId);
+    if (dbId === undefined) {
+      dbId = await fetchDbIdForElement(elementId);
+    }
+    if (!Number.isFinite(dbId)) continue;
+    const colorVector = determineHighlightColor(workOrders);
+    if (!colorVector) continue;
+    viewer.setThemingColor(dbId, colorVector, viewer.model, false);
+  }
+
+  if (viewer.impl && typeof viewer.impl.invalidate === 'function') {
+    viewer.impl.invalidate(true, true, true);
+  }
+}
+
+function setOtHighlightEnabledState(enabled) {
+  otHighlightEnabled = Boolean(enabled);
+  rebuildOtHighlightsFromLatest();
+}
+
+function applyMarkerScreenPositions() {
+  if (!viewer || !geometryReady) return;
+  if (!otMarkerLayer || !otMarkerEntries.size) return;
+  const threeNs = getThreeRef();
+  if (!threeNs) return;
+  const scratch = new threeNs.Vector3();
+
+  otMarkerEntries.forEach((entry) => {
+    scratch.copy(entry.world);
+    const screen = viewer.worldToClient(scratch);
+    if (!screen || Number.isNaN(screen.x) || Number.isNaN(screen.y)) {
+      entry.el.style.opacity = '0';
+      entry.screen.x = null;
+      entry.screen.y = null;
+      return;
+    }
+    entry.el.style.opacity = '1';
+    entry.el.style.transform = `translate(${screen.x}px, ${screen.y}px) translate(-50%, -50%)`;
+    entry.screen.x = screen.x;
+    entry.screen.y = screen.y;
+    if (isOtMarkerPopupVisible() && activeMarkerElementId === entry.elementId) {
+      positionOtMarkerPopup(entry);
+    }
+  });
+}
+
+function requestMarkerPositionUpdate(force = false) {
+  if (force) {
+    if (markerPositionFrame != null) {
+      window.cancelAnimationFrame(markerPositionFrame);
+      markerPositionFrame = null;
+    }
+    applyMarkerScreenPositions();
+    return;
+  }
+
+  if (markerPositionFrame != null) return;
+  markerPositionFrame = window.requestAnimationFrame(() => {
+    markerPositionFrame = null;
+    applyMarkerScreenPositions();
+  });
+}
+
+function handleViewerCameraChange() {
+  requestMarkerPositionUpdate();
+}
+
+function handleViewerResizeEvent() {
+  requestMarkerPositionUpdate(true);
+}
+
+function handleWindowResize() {
+  requestMarkerPositionUpdate();
+}
+
+async function rebuildOtMarkersFromLatest() {
+  if (!viewer || !geometryReady) return;
+  const runToken = ++otMarkerUpdateToken;
+  if (!Array.isArray(latestWorkOrdersSnapshot)) {
+    resetOtMarkerLayer();
+    hideOtMarkerPopup();
+    requestMarkerPositionUpdate(true);
+    return;
+  }
+
+  if (!otBubbleEnabled) {
+    resetOtMarkerLayer();
+    hideOtMarkerPopup();
+    return;
+  }
+
+  const grouped = groupActiveWorkOrdersByElement(latestWorkOrdersSnapshot);
+  const elementIds = Array.from(grouped.keys());
+
+  if (!elementIds.length) {
+    renderOtMarkers([]);
+    return;
+  }
+
+  const markerData = [];
+
+  for (const elementId of elementIds) {
+    if (runToken !== otMarkerUpdateToken) {
+      return;
+    }
+    let dbId = elementIdDbIdCache.get(elementId);
+    if (dbId === undefined) {
+      dbId = await fetchDbIdForElement(elementId);
+    }
+    if (!Number.isFinite(dbId)) continue;
+    const center = getDbIdWorldCenter(dbId);
+    if (!center) continue;
+    markerData.push({ elementId, center, workOrders: grouped.get(elementId) || [] });
+  }
+
+  if (runToken !== otMarkerUpdateToken) {
+    return;
+  }
+
+  renderOtMarkers(markerData);
 }
 
 // ---------------- PROPRIEDADES ----------------
@@ -478,6 +954,35 @@ window.addEventListener('workorders:focus', (event) => {
   focusElementByElementId(elementId);
 });
 
+window.addEventListener('workorders:updated', (event) => {
+  if (!event) return;
+  const payload = Array.isArray(event.detail) ? event.detail : [];
+  latestWorkOrdersSnapshot = payload;
+  hideOtMarkerPopup();
+  rebuildOtMarkersFromLatest();
+  rebuildOtHighlightsFromLatest();
+});
+
+window.addEventListener('resize', handleWindowResize);
+
+window.addEventListener('click', (event) => {
+  if (!isOtMarkerPopupVisible()) return;
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target) {
+    hideOtMarkerPopup();
+    return;
+  }
+  if (target.closest('.ot-marker-popup')) return;
+  if (target.closest(`.${OT_MARKER_DOT_CLASS}`)) return;
+  hideOtMarkerPopup();
+});
+
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    hideOtMarkerPopup();
+  }
+});
+
 
 // ---------------- INICIALIZAÇÃO DO VIEWER ----------------
 
@@ -522,6 +1027,15 @@ async function initViewer() {
         }
 
         viewer.addEventListener(
+          Autodesk.Viewing.CAMERA_CHANGE_EVENT,
+          handleViewerCameraChange
+        );
+        viewer.addEventListener(
+          Autodesk.Viewing.VIEWER_RESIZE_EVENT,
+          handleViewerResizeEvent
+        );
+
+        viewer.addEventListener(
           Autodesk.Viewing.SELECTION_CHANGED_EVENT,
           onSelectionChanged
         );
@@ -538,6 +1052,10 @@ async function initViewer() {
               const pending = pendingElementFocus;
               pendingElementFocus = null;
               focusElementByElementId(pending);
+            }
+            if (latestWorkOrdersSnapshot) {
+              rebuildOtMarkersFromLatest();
+              rebuildOtHighlightsFromLatest();
             }
           }
         );
@@ -635,6 +1153,27 @@ function handleLoadModel() {
 
 // ---------------- BOOTSTRAP ----------------
 
+function initVisualizationFilters() {
+  const highlightInput = document.getElementById('toggle-ot-highlight');
+  if (highlightInput) {
+    otHighlightEnabled = highlightInput.checked;
+    setOtHighlightEnabledState(otHighlightEnabled);
+    highlightInput.addEventListener('change', () => {
+      setOtHighlightEnabledState(highlightInput.checked);
+    });
+  }
+
+  const bubblesInput = document.getElementById('toggle-ot-bubbles');
+  if (bubblesInput) {
+    otBubbleEnabled = bubblesInput.checked;
+    applyOtMarkerLayerVisibility();
+    setOtBubbleEnabledState(otBubbleEnabled);
+    bubblesInput.addEventListener('change', () => {
+      setOtBubbleEnabledState(bubblesInput.checked);
+    });
+  }
+}
+
 console.log('[APS] Waiting for page load...');
 let initAttempts = 0;
 
@@ -650,6 +1189,7 @@ document.addEventListener('DOMContentLoaded', () => {
     console.warn('[APS] properties toggle button not found');
   }
   togglePropertiesPanel(false);
+  initVisualizationFilters();
   
   const checkAutodesk = setInterval(() => {
     initAttempts++;
