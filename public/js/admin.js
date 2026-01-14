@@ -142,7 +142,7 @@ function renderList(items) {
 
     const meta = [
       `Prioridade: ${item.priority || '—'}`,
-      item.dueDate ? `Limite: ${item.dueDate.slice(0, 10)}` : null,
+      item.dueDate ? `Edifício: ${item.dueDate}` : null,
       item.asset ? `Ativo: ${item.asset}` : null,
       item.elementId ? `Element ID: ${item.elementId}` : null,
       item.status ? `Status: ${item.status}` : null,

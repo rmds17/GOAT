@@ -180,7 +180,7 @@ async function renderList(options = {}) {
       </div>
       <div class="wo-meta">
         <span>Prioridade: ${wo.priority}</span>
-        ${wo.dueDate ? `<span>Limite: ${wo.dueDate.slice(0,10)}</span>` : ''}
+        ${wo.dueDate ? `<span>Edifício: ${wo.dueDate}</span>` : ''}
         ${wo.asset ? `<span>Ativo: ${wo.asset}</span>` : ''}
         ${wo.elementId ? `<span>Element ID: ${wo.elementId}</span>` : ''}
         ${wo.status ? `<span>Status: ${wo.status}</span>` : ''}

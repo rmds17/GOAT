@@ -69,7 +69,7 @@ const STATUS_DONE = process.env.WORKORDER_STATUS_DONE || 'Concluída';
 const WORKORDER_FIELD_OPTIONS = {
   title: ['Título'],
   priority: ['Prioridade'],
-  dueDate: ['Data Limite'],
+  dueDate: ['Edifício'],
   asset: ['Ativo / Zona'],
   description: ['Descrição'],
   elementId: ['Element ID'],
